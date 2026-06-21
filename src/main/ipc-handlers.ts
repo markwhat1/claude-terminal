@@ -802,6 +802,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     return deps.getRemoteAccessInfo();
   });
 
+  // ---- Program Board (local-only, never forwarded to remote clients) ----
+  // Returns the current parsed ProgramBoardState from the reader, or an empty
+  // not-running state when the reader is not yet available.
+  ipcMain.handle('program-board:getState', async () => {
+    // The reader lives in its own module; its instance is attached to state
+    // once M4 wires it in. Until then, return the safe not-running sentinel.
+    const reader = (state as any).programBoardReader;
+    if (reader && typeof reader.getState === 'function') {
+      return reader.getState();
+    }
+    return { programs: [], generated_at: null, is_running: false };
+  });
+
   // Return cleanup function and wirePtyToTab for external use
   return {
     cleanup: () => {

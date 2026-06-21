@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { PermissionMode, Tab, SavedTab, RemoteAccessInfo, RepoHookConfig, HookExecutionStatus, ProjectConfig, WorkspaceConfig } from './shared/types';
 import type { ShellOption } from './shared/platform';
+import { PROGRAM_BOARD_STATE_CHANNEL } from './shared/program-board-state';
 
 const api = {
   // Platform info
@@ -230,6 +231,19 @@ const api = {
     ipcRenderer.on('tab:projectSwitch', handler);
     return () => {
       ipcRenderer.removeListener('tab:projectSwitch', handler);
+    };
+  },
+
+  // Program Board (local-only, never forwarded to remote clients)
+  getProgramBoardState: (): Promise<unknown> =>
+    ipcRenderer.invoke('program-board:getState'),
+
+  onProgramBoardState: (callback: (state: unknown) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: unknown) =>
+      callback(state);
+    ipcRenderer.on(PROGRAM_BOARD_STATE_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(PROGRAM_BOARD_STATE_CHANNEL, handler);
     };
   },
 };

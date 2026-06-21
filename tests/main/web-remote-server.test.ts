@@ -147,4 +147,27 @@ describe('WebRemoteServer handleMessage', () => {
       expect(sentMessages).toContainEqual({ type: 'worktree:currentBranch', branch: 'main' });
     });
   });
+
+  describe('unknown message type', () => {
+    it('logs a warning for an unknown type and does not throw', async () => {
+      // This pins the no-generic-passthrough invariant: program-board:getState
+      // is handled locally via ipcMain.handle and must never be processed
+      // through the WebSocket bridge's handleMessage switch.
+      const { sendMessage } = createTestClient(server);
+
+      // Must not throw
+      await expect(sendMessage({ type: 'program-board:getState' })).resolves.toBeUndefined();
+
+      // The default case logs a warning
+      const { log: mockLog } = await import('@main/logger');
+      expect((mockLog as any).warn).toHaveBeenCalled();
+    });
+
+    it('logs a warning for any other unknown type', async () => {
+      const { sendMessage } = createTestClient(server);
+      await expect(sendMessage({ type: 'not:a:real:channel' })).resolves.toBeUndefined();
+      const { log: mockLog } = await import('@main/logger');
+      expect((mockLog as any).warn).toHaveBeenCalled();
+    });
+  });
 });

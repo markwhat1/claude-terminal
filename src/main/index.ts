@@ -2,6 +2,59 @@ import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { handleSquirrelEvent } from './squirrel-startup';
+import { PROGRAM_BOARD_STATE_CHANNEL as _PROGRAM_BOARD_STATE_CHANNEL } from '@shared/program-board-state';
+
+// ---------------------------------------------------------------------------
+// Program-board channel constants (re-exported for tests and type consumers)
+// ---------------------------------------------------------------------------
+
+/**
+ * Channel name for the program-board state broadcast (main -> renderer).
+ * Renderer-only: never forwarded to remote WebSocket clients.
+ * Defined in src/shared/program-board-state.ts; re-exported here for tests.
+ */
+export const PROGRAM_BOARD_STATE_CHANNEL = _PROGRAM_BOARD_STATE_CHANNEL;
+
+/**
+ * The set of channel names that sendToRenderer DOES forward to remote
+ * WebSocket clients. Used only for the absence assertion in tests:
+ * PROGRAM_BOARD_STATE_CHANNEL must NOT appear here.
+ */
+export const REMOTE_FORWARDED_CHANNELS: ReadonlySet<string> = new Set([
+  'pty:data',
+  'tab:updated',
+  'tab:removed',
+  'pty:resized',
+  'tab:switched',
+  'tab:worktreeProgress',
+]);
+
+/**
+ * Build the broadcast payload for a given channel and its args.
+ * Returns the object to broadcast, or null if the channel is not forwarded.
+ *
+ * The six forwarded channels each have a DISTINCT payload shape, so each
+ * case reconstructs the correct object from positional args. A flat string
+ * array cannot carry the shape differences across the switch.
+ */
+export function buildBroadcastPayload(channel: string, args: unknown[]): object | null {
+  switch (channel) {
+    case 'pty:data':
+      return { type: 'pty:data', tabId: args[0], data: args[1] };
+    case 'tab:updated':
+      return { type: 'tab:updated', tab: args[0] };
+    case 'tab:removed':
+      return { type: 'tab:removed', tabId: args[0] };
+    case 'pty:resized':
+      return { type: 'pty:resized', tabId: args[0], cols: args[1], rows: args[2] };
+    case 'tab:switched':
+      return { type: 'tab:switched', tabId: args[0] };
+    case 'tab:worktreeProgress':
+      return { type: 'tab:worktreeProgress', tabId: args[0], text: args[1] };
+    default:
+      return null;
+  }
+}
 
 import { TabManager } from './tab-manager';
 import { PtyManager } from './pty-manager';
@@ -73,30 +126,44 @@ const state: AppState = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function sendToRenderer(channel: string, ...args: unknown[]) {
+/**
+ * Send a channel event to the Electron renderer and, for the six forwarded
+ * channels, broadcast to any connected remote WebSocket clients.
+ *
+ * Accepts an optional trailing _mockBroadcast override (last arg is an object
+ * with a _mockBroadcast property) used by unit tests to capture broadcasts
+ * without a live WebRemoteServer instance.
+ */
+export function sendToRenderer(channel: string, ...args: unknown[]) {
+  // Strip optional test-only mock override from the trailing args
+  let mockBroadcast: ((msg: object) => void) | undefined;
+  if (args.length > 0 && typeof args[args.length - 1] === 'object' && args[args.length - 1] !== null) {
+    const last = args[args.length - 1] as Record<string, unknown>;
+    if (typeof last._mockBroadcast === 'function') {
+      mockBroadcast = last._mockBroadcast as (msg: object) => void;
+      args = args.slice(0, -1);
+    }
+  }
+
   const win = state.mainWindow as BrowserWindow | null;
   if (win && !win.isDestroyed()) {
     win.webContents.send(channel, ...args);
   }
-  // Forward relevant events to remote WebSocket clients
-  if (webRemoteServer) {
-    if (channel === 'pty:data') {
-      webRemoteServer.broadcast({ type: 'pty:data', tabId: args[0], data: args[1] });
-    } else if (channel === 'tab:updated') {
-      webRemoteServer.broadcast({ type: 'tab:updated', tab: args[0] });
-    } else if (channel === 'tab:removed') {
-      webRemoteServer.broadcast({ type: 'tab:removed', tabId: args[0] });
-    } else if (channel === 'pty:resized') {
-      webRemoteServer.broadcast({ type: 'pty:resized', tabId: args[0], cols: args[1], rows: args[2] });
-    } else if (channel === 'tab:switched') {
-      webRemoteServer.broadcast({ type: 'tab:switched', tabId: args[0] });
-    } else if (channel === 'tab:worktreeProgress') {
-      webRemoteServer.broadcast({ type: 'tab:worktreeProgress', tabId: args[0], text: args[1] });
+
+  // Forward relevant events to remote WebSocket clients.
+  // buildBroadcastPayload returns null for channels NOT in REMOTE_FORWARDED_CHANNELS,
+  // which guarantees program-board:state is never forwarded.
+  const payload = buildBroadcastPayload(channel, args);
+  if (payload !== null) {
+    if (mockBroadcast) {
+      mockBroadcast(payload);
+    } else if (webRemoteServer) {
+      webRemoteServer.broadcast(payload);
     }
-    // Note: project:added, project:removed, tab:projectSwitch, hook:status, and
-    // git:branchChanged are intentionally NOT forwarded to remote clients.
-    // Project management is a local-only operation.
   }
+  // Channels not in REMOTE_FORWARDED_CHANNELS (project:added, project:removed,
+  // tab:projectSwitch, hook:status, git:branchChanged, program-board:state, etc.)
+  // are intentionally not forwarded to remote clients.
 }
 
 let persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;

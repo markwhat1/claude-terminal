@@ -168,6 +168,24 @@ Worktree channels accept an optional `projectId` parameter to scope the operatio
 | `remote:getInfo` | renderer -> main | invoke | `getRemoteAccessInfo()` | -> `RemoteAccessInfo` |
 | `remote:updated` | main -> renderer | webContents.send | `onRemoteAccessUpdate(cb)` | `info: RemoteAccessInfo` |
 
+### Program Board
+
+| Channel | Direction | Pattern | Renderer Signature | Payload |
+|---|---|---|---|---|
+| `program-board:getState` | renderer -> main | invoke | `getProgramBoardState()` | -> `ProgramBoardState \| null` |
+| `program-board:state` | main -> renderer | webContents.send | `onProgramBoardState(cb)` | `state: ProgramBoardState` |
+
+Both channels are **local-only**. `program-board:getState` is handled by `ipcMain.handle` and has no generic passthrough in `WebRemoteServer.handleMessage`; remote clients sending this type receive a warning and no response. `program-board:state` is not in `REMOTE_FORWARDED_CHANNELS` and is never broadcast to WebSocket clients. The program-board state is a work-digest for the local machine operator, not remote clients.
+
+The channel name constant `PROGRAM_BOARD_STATE_CHANNEL` is defined in `src/shared/program-board-state.ts` and used by both the main-process send and the preload `on()` to prevent a rename from silently breaking the subscription.
+
+#### Remote parity table
+
+| Channel | Remote (WebSocket) | Notes |
+|---|---|---|
+| `program-board:getState` | local-only | `handleMessage` has no generic passthrough (3.6) |
+| `program-board:state` | local-only | absent from `REMOTE_FORWARDED_CHANNELS` |
+
 ### Git
 
 | Channel | Direction | Pattern | Renderer Signature | Payload |
@@ -197,6 +215,7 @@ Main-to-renderer events are subscribed in the preload via wrapper methods that r
 | `onProjectAdded` | `project:added` | `(project: ProjectConfig) => void` |
 | `onProjectRemoved` | `project:removed` | `(projectId: string) => void` |
 | `onProjectSwitch` | `tab:projectSwitch` | `(projectId: string) => void` |
+| `onProgramBoardState` | `program-board:state` | `(state: unknown) => void` |
 
 ### Cleanup Pattern in App.tsx
 

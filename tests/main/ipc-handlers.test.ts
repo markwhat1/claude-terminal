@@ -192,6 +192,7 @@ describe('registerIpcHandlers', () => {
       'dialog:selectDirectory', 'cli:getStartDir',
       'remote:activate', 'remote:deactivate', 'remote:getInfo',
       'instance:getHue',
+      'program-board:getState',
     ];
     for (const channel of expectedHandlers) {
       expect(handlers.has(channel), `missing handler: ${channel}`).toBe(true);

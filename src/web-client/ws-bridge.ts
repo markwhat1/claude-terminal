@@ -403,6 +403,12 @@ export class WebSocketBridge {
         this.disconnectListeners.add(callback);
         return () => { this.disconnectListeners.delete(callback); };
       },
+
+      // Program Board (local-only: the program board runs on cad-doctor,
+      // not the remote client machine. These stubs satisfy the preload API
+      // shape but are never wired to a real send from the web client.)
+      getProgramBoardState: async (): Promise<unknown> => null,
+      onProgramBoardState: (_callback: (state: unknown) => void): (() => void) => () => {},
     };
   }
 }

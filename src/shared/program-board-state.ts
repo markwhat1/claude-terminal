@@ -1,4 +1,13 @@
 /**
+ * IPC channel for the program-board state broadcast (main -> renderer).
+ *
+ * Renderer-only: this channel is never forwarded to remote WebSocket clients.
+ * Both the main-process send and the preload on() must reference this constant
+ * so a rename cannot silently break the subscription.
+ */
+export const PROGRAM_BOARD_STATE_CHANNEL = 'program-board:state';
+
+/**
  * Pure helpers for consuming program-board state.json.
  *
  * All functions here are Electron-free and DOM-free so they work in both
