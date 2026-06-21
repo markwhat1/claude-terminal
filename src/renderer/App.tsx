@@ -42,6 +42,11 @@ export default function App() {
   remoteTargetRef.current = remoteTarget;
   const [showConnectRemote, setShowConnectRemote] = useState(false);
   const [rememberedRemoteUrl, setRememberedRemoteUrl] = useState('');
+  // Pending connect intent; the connection is persisted only after the connect
+  // succeeds (see persistToken in the remote render), so a mistyped url/code
+  // never poisons future auto-reconnect.
+  const pendingConnectRef = useRef<{ url: string; remember: boolean } | null>(null);
+  const bootstrappedRef = useRef(false);
 
   // Multi-project state
   const [projects, setProjects] = useState<ProjectConfig[]>([]);
@@ -234,13 +239,21 @@ export default function App() {
   }, []);
 
   // --- Native remote-connect (this app as a client of another machine) ---
-  const handleConnectRemote = useCallback(async (url: string, code: string, remember: boolean) => {
-    await window.claudeTerminal.setRemoteConnection({ url, token: code, autoConnect: remember });
+  const handleConnectRemote = useCallback((url: string, code: string, remember: boolean) => {
+    // Persist only AFTER a successful connect (via persistToken in the remote
+    // render), so a mistyped url/code never poisons future auto-reconnect.
+    pendingConnectRef.current = { url, remember };
     setRememberedRemoteUrl(url);
     bridgeRef.current = new WebSocketBridge();
     setRemoteTarget({ url, token: code, autoConnect: remember });
     setShowConnectRemote(false);
     setAppState('remote');
+  }, []);
+
+  const handleForgetRemoteHost = useCallback(async () => {
+    await window.claudeTerminal.clearRemoteConnection();
+    setRememberedRemoteUrl('');
+    setShowConnectRemote(false);
   }, []);
 
   const handleDisconnectRemote = useCallback(async () => {
@@ -332,6 +345,8 @@ export default function App() {
     let cancelled = false;
 
     (async () => {
+      if (bootstrappedRef.current) return;
+      bootstrappedRef.current = true;
       const cliDir = await window.claudeTerminal.getCliStartDir();
       if (cancelled) return;
       if (!cliDir) {
@@ -341,6 +356,7 @@ export default function App() {
         if (cancelled) return;
         if (conn?.url) setRememberedRemoteUrl(conn.url);
         if (conn?.autoConnect && conn.url && conn.token) {
+          pendingConnectRef.current = { url: conn.url, remember: true };
           bridgeRef.current = new WebSocketBridge();
           setRemoteTarget({ url: conn.url, token: conn.token, autoConnect: true });
           setAppState('remote');
@@ -597,7 +613,13 @@ export default function App() {
             bridge={bridgeRef.current}
             targetUrl={remoteTarget.url}
             initialToken={remoteTarget.token}
-            persistToken={() => { /* connection already persisted by App */ }}
+            persistToken={(token) => {
+              // Fires after a successful connect, before the api swap, so the
+              // local api is still active. This is the only place the connection
+              // is persisted, so a failed connect can never poison auto-reconnect.
+              const p = pendingConnectRef.current;
+              if (p) window.claudeTerminal.setRemoteConnection({ url: p.url, token, autoConnect: p.remember });
+            }}
             loadSavedToken={() => remoteTargetRef.current?.token ?? null}
             onExit={handleDisconnectRemote}
             onRetry={handleDisconnectRemote}
@@ -618,6 +640,7 @@ export default function App() {
               defaultUrl={rememberedRemoteUrl}
               onConnect={handleConnectRemote}
               onCancel={() => setShowConnectRemote(false)}
+              onForget={handleForgetRemoteHost}
             />
           )}
         </div>
@@ -679,6 +702,7 @@ export default function App() {
           defaultUrl={rememberedRemoteUrl}
           onConnect={handleConnectRemote}
           onCancel={() => setShowConnectRemote(false)}
+          onForget={handleForgetRemoteHost}
         />
       )}
       {showWorktreeDialog && (

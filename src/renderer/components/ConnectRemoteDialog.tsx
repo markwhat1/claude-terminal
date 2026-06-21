@@ -9,9 +9,11 @@ interface ConnectRemoteDialogProps {
   defaultUrl?: string;
   onConnect: (url: string, code: string, remember: boolean) => void;
   onCancel: () => void;
+  /** Forget the remembered host. Shown only when defaultUrl is set. */
+  onForget?: () => void;
 }
 
-export default function ConnectRemoteDialog({ defaultUrl, onConnect, onCancel }: ConnectRemoteDialogProps) {
+export default function ConnectRemoteDialog({ defaultUrl, onConnect, onCancel, onForget }: ConnectRemoteDialogProps) {
   const [url, setUrl] = useState(defaultUrl ?? '');
   const [code, setCode] = useState('');
   const [remember, setRemember] = useState(true);
@@ -70,6 +72,15 @@ export default function ConnectRemoteDialog({ defaultUrl, onConnect, onCancel }:
             Remember this host and auto-connect on launch
           </label>
           {error && <p className="text-xs text-destructive">{error}</p>}
+          {onForget && defaultUrl && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline self-start"
+              onClick={onForget}
+            >
+              Forget this host
+            </button>
+          )}
           <div className="flex gap-2">
             <Button type="button" variant="secondary" className="flex-1" onClick={onCancel}>Cancel</Button>
             <Button type="submit" className="flex-1" disabled={code.length !== 6 || !url.trim()}>Connect</Button>

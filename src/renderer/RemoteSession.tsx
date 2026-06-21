@@ -46,8 +46,9 @@ async function connectWithToken(
   targetUrl: string | undefined,
   persistToken: (t: string) => void,
   onConnected: OnConnected,
+  timeoutMs?: number,
 ): Promise<void> {
-  const result = await bridge.connect(token, targetUrl);
+  const result = await bridge.connect(token, targetUrl, timeoutMs ? { timeoutMs } : undefined);
   persistToken(token);
   // Swap window.claudeTerminal to the bridge and re-bind PTY listeners before
   // the connected UI mounts any Terminal. The bridge api is a structural
@@ -451,7 +452,7 @@ function DisconnectedScreen({ bridge, targetUrl, persistToken, loadSavedToken, o
     const tryReconnect = () => {
       if (cancelled) return;
       attempt++;
-      connectWithToken(bridge, saved, targetUrl, persistToken, onReconnected).catch(() => {
+      connectWithToken(bridge, saved, targetUrl, persistToken, onReconnected, 5000).catch(() => {
         if (cancelled) return;
         if (attempt >= maxAttempts) {
           setStatus('failed');

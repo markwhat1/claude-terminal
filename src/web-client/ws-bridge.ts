@@ -275,7 +275,7 @@ export class WebSocketBridge {
           this.send({ type: 'tab:create' });
         });
       },
-      createTabWithWorktree: async (name: string): Promise<Tab> => {
+      createTabWithWorktree: async (_projectId: string, name: string): Promise<Tab> => {
         return new Promise((resolve, reject) => {
           this.pendingTabCreate = { resolve, reject };
           this.send({ type: 'tab:createWithWorktree', name });

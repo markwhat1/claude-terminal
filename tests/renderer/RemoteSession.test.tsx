@@ -48,7 +48,7 @@ describe('RemoteSession', () => {
     await waitFor(() => {
       expect(container.querySelector('[data-web-tabbar]')).toBeTruthy();
     });
-    expect(bridge.connect).toHaveBeenCalledWith('ABC234', 'https://h.ts.net');
+    expect(bridge.connect).toHaveBeenCalledWith('ABC234', 'https://h.ts.net', undefined);
     expect(window.claudeTerminal).toBe(bridge.api);
   });
 

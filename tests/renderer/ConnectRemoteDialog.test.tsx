@@ -19,4 +19,11 @@ describe('ConnectRemoteDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(onConnect).toHaveBeenCalledWith('https://cad-doctor.crested-ruler.ts.net', 'ABC234', true);
   });
+
+  it('offers Forget when a host is remembered and invokes onForget', () => {
+    const onForget = vi.fn();
+    render(<ConnectRemoteDialog defaultUrl="https://h.ts.net" onConnect={vi.fn()} onCancel={vi.fn()} onForget={onForget} />);
+    fireEvent.click(screen.getByText('Forget this host'));
+    expect(onForget).toHaveBeenCalled();
+  });
 });

@@ -15,14 +15,16 @@ export function enterRemote(api: Window['claudeTerminal']): void {
     localApi = window.claudeTerminal;
     captured = true;
   }
-  resetGlobalPtyListener();
+  // Assign before re-binding so any Terminal mounting between these two
+  // synchronous statements registers against the already-swapped api.
   window.claudeTerminal = api;
+  resetGlobalPtyListener();
 }
 
 /** Restore the original local Electron api and re-bind the PTY listener. No-op
  *  if enterRemote was never called. */
 export function restoreLocal(): void {
   if (!captured) return;
-  resetGlobalPtyListener();
   window.claudeTerminal = localApi;
+  resetGlobalPtyListener();
 }
