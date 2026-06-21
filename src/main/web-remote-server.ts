@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { app } from 'electron';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PERMISSION_FLAGS } from '@shared/types';
+import { genToken } from '@shared/token';
 import type { TabManager } from './tab-manager';
 import type { PtyManager } from './pty-manager';
 import type { AppState, WirePtyToTabFn } from './ipc-handlers';
@@ -53,9 +54,7 @@ export class WebRemoteServer {
 
   constructor(deps: WebRemoteServerDeps) {
     this.deps = deps;
-    // 6-character alphanumeric code
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    this.token = Array.from({ length: 6 }, () => chars[crypto.randomInt(0, chars.length)]).join('');
+    this.token = genToken();
   }
 
   get accessToken(): string {
