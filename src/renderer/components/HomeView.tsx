@@ -37,11 +37,9 @@ import type { ProgramBoardState, DashboardItem, ClosedRecord } from '@shared/pro
 import SessionStrip from './SessionStrip';
 import {
   mapCardToItem,
-  defaultNeedsYouList,
 } from '@shared/program-board-state';
 import type { AgeColor } from '@shared/dashboard-ui-helpers';
 import {
-  selectHero,
   pickPrimaryAction,
   heroHeadline,
   composeCopy,
@@ -59,6 +57,12 @@ import {
   type KnownActionId,
   type ClaudeQueryLine,
 } from '@shared/home-copy';
+import { rankItems } from '@shared/rank-items';
+import {
+  applyReroll,
+  parkHero,
+  type ParkedHeroSlot,
+} from '@shared/hero-reroll';
 
 // ---------------------------------------------------------------------------
 // Idle-floor constant (M8b-iii, 5.2)
@@ -282,6 +286,13 @@ interface HeroProps {
    * active (count still ticks in both cases, 1.5).
    */
   settleClass: 'settle-ordinary' | 'settle-decided' | null;
+  /**
+   * The re-roll "Not now" handler (M11 / 1.6). When provided, a quiet
+   * "Not now" button renders in the footer (the 1.1 budget "not now" slot,
+   * intentionally empty in Phase 0/1, now filled). When null or undefined,
+   * the slot stays empty (e.g. when ranked.length < 2, nothing to surface).
+   */
+  onReroll?: (() => void) | null;
 }
 
 /**
@@ -296,7 +307,7 @@ function isClaudePrimaryAction(action: KnownActionId): boolean {
   return action !== 'openPowerShell';
 }
 
-function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, onCopy, onOpenExternal, settleClass }: HeroProps) {
+function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, onCopy, onOpenExternal, settleClass, onReroll }: HeroProps) {
   const action: KnownActionId = pickPrimaryAction(hero);
   const headline = heroHeadline(hero, action);
   const repo = hero.project; // repos[0], the cwd target.
@@ -372,14 +383,26 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, o
         {!hasPrimary ? (
           // No-action fallback (6.3): a Copy-only hero, NEVER a disabled primary
           // in the most dominant pixel.
-          <Button
-            ref={primaryRef}
-            variant="secondary"
-            data-testid="home-hero-copy-only"
-            onClick={() => onCopy(copyText)}
-          >
-            Copy
-          </Button>
+          <>
+            <Button
+              ref={primaryRef}
+              variant="secondary"
+              data-testid="home-hero-copy-only"
+              onClick={() => onCopy(copyText)}
+            >
+              Copy
+            </Button>
+            {onReroll && (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="home-hero-reroll"
+                onClick={onReroll}
+              >
+                Not now
+              </Button>
+            )}
+          </>
         ) : useClaudePrimary ? (
           // Claude-primary: full-weight Claude injection button (M10d, 1.1).
           <>
@@ -407,6 +430,16 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, o
             >
               Copy
             </Button>
+            {onReroll && (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="home-hero-reroll"
+                onClick={onReroll}
+              >
+                Not now
+              </Button>
+            )}
           </>
         ) : (
           // openPowerShell primary: shell is the right affordance for this item.
@@ -427,6 +460,16 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, o
             >
               Copy
             </Button>
+            {onReroll && (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="home-hero-reroll"
+                onClick={onReroll}
+              >
+                Not now
+              </Button>
+            )}
           </>
         )}
       </CardFooter>
@@ -742,9 +785,79 @@ export default function HomeView({
   // consume the full board list, not the unified set).
   const items = boardItems;
 
-  const hero = useMemo(() => selectHero(unifiedCandidates, now), [unifiedCandidates, now]);
+  // ---------------------------------------------------------------------------
+  // M11: Per-day parked-hero-id slot (1.6 / PLAN-PHASE-2-3.md M6).
+  //
+  // The parked slot is held in React state so re-rolls persist within the
+  // session. On mount we check localStorage for a slot from a prior session on
+  // the same day; a new day clears the park automatically (via dayKey compare
+  // inside resolveParkedId, which returns null for a stale day).
+  //
+  // The slot is renderer-owned (no IPC channel; it is display state, not
+  // server state). The "Not now" handler writes the slot back to localStorage
+  // so a same-day reload still honors the park.
+  // ---------------------------------------------------------------------------
+
+  const PARKED_SLOT_KEY = 'home-hero-parked-slot';
+
+  const [parkedSlot, setParkedSlot] = useState<ParkedHeroSlot | null>(() => {
+    try {
+      const raw = typeof localStorage !== 'undefined'
+        ? localStorage.getItem(PARKED_SLOT_KEY)
+        : null;
+      if (!raw) return null;
+      return JSON.parse(raw) as ParkedHeroSlot;
+    } catch {
+      return null;
+    }
+  });
+
+  // The deterministic ranked list for this poll tick. Paused items already land
+  // in Tier 6 inside rankItems, so they do not appear as the hero.
+  const rankedItems = useMemo(
+    () => rankItems(unifiedCandidates, now),
+    [unifiedCandidates, now],
+  );
+
+  // Apply the per-day re-roll on top of the deterministic order (1.6 / M11).
+  // applyReroll removes the parked id from the surfaced order so ranked[1]
+  // becomes the hero. Returns the original order when nothing is parked or the
+  // park is from a previous day.
+  const effectiveRanked = useMemo(
+    () => applyReroll(rankedItems, parkedSlot, now),
+    [rankedItems, parkedSlot, now],
+  );
+
+  const hero = effectiveRanked.length > 0 ? effectiveRanked[0] : null;
+
+  // The "Not now" handler parks the current hero for the rest of today and
+  // persists the slot to localStorage so a same-day reload still honors it.
+  // Only provided when there IS a ranked[1] to surface (otherwise the button
+  // would park to nothing, which is a dead affordance).
+  const handleReroll = useCallback(() => {
+    if (!hero) return;
+    const slot = parkHero(hero.id, now);
+    setParkedSlot(slot);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(PARKED_SLOT_KEY, JSON.stringify(slot));
+      }
+    } catch {
+      // localStorage unavailable (tests or sandboxed renderer): in-memory state
+      // already holds the slot, so the re-roll still works for the session.
+    }
+  }, [hero, now]);
+
+  // Only surface the re-roll control when there is a ranked[1] to show after
+  // parking the current hero (a single-card board has nowhere to go, 1.1).
+  const canReroll = effectiveRanked.length > 1;
+
   const needsYouRows = useMemo(() => {
-    // The sub-dominant list is the unified set minus the hero.
+    // The sub-dominant list MIRRORS PRODUCER BOARD ORDER (PLAN.md 1.11 / 5.4).
+    // A Phase-2 builder must NOT re-sort this list. We take unifiedCandidates
+    // (which is already in producer board order: boardNeedsYou + idleTabItems)
+    // and filter out only the hero. rankItems order is used ONLY for the hero
+    // slot; the remaining rows stay in producer order.
     if (!hero) return unifiedCandidates;
     return unifiedCandidates.filter((i) => i.id !== hero.id);
   }, [unifiedCandidates, hero]);
@@ -896,6 +1009,7 @@ export default function HomeView({
           onCopy={onCopy}
           onOpenExternal={onOpenExternal}
           settleClass={heroSettle}
+          onReroll={canReroll ? handleReroll : null}
         />
 
         <NeedsYouList rows={needsYouRows} pausedCount={pausedCount} now={now} />
