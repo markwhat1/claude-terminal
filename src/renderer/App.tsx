@@ -468,8 +468,16 @@ export default function App() {
       addProject: handleAddProject,
       newTab: handleNewTabWithoutWorktree,
       newWorktreeTab: tryShowWorktreeDialog,
-      newDefaultShellTab: handleNewDefaultShellTab,
-      closeTab: handleCloseTab,
+      // When Home is active, do not forward HOME_TAB_ID as an afterTabId;
+      // pass undefined so the new shell tab opens at the end of the list.
+      newDefaultShellTab: (afterTabId) =>
+        handleNewDefaultShellTab(afterTabId === homeTabId ? undefined : afterTabId),
+      // Home is a renderer-only view with no PTY. Closing it has no meaning,
+      // so no-op when the active id is the Home sentinel.
+      closeTab: (tabId) => {
+        if (tabId === homeTabId) return;
+        handleCloseTab(tabId);
+      },
       selectTab: handleSelectTab,
       selectProject: handleSelectProject,
       renameTab: (id) => setRenamingTabId(id),
