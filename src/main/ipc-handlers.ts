@@ -334,7 +334,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
   });
 
   // ---- Tabs ----
-  ipcMain.handle('tab:create', async (_event, projectIdOrWorktree: string | null, worktreeNameOrResumeId?: string | null, resumeSessionIdOrSavedName?: string, savedNameArg?: string) => {
+  // M10b: explicitCwd added as the 5th positional arg (after projectId, worktree,
+  // resumeSessionId, savedName). This is a CHANNEL-CONTRACT change on a remote-enabled
+  // channel. The remote tab:create message shape is INTENTIONALLY NOT extended here:
+  // web-remote-server.ts:316-323 hardcodes state.workspaceDir and discards any resolved
+  // cwd, so wiring explicitCwd remotely would silently point a canned LLM query at the
+  // wrong tree. The remote handler is left as { type: 'tab:create' } with no cwd field.
+  // When a future remote Home is built (Phase 3, PLAN.md 2.9) projectId must first be
+  // threaded into the remote handler before explicitCwd is exposed remotely.
+  ipcMain.handle('tab:create', async (_event, projectIdOrWorktree: string | null, worktreeNameOrResumeId?: string | null, resumeSessionIdOrSavedName?: string, savedNameArg?: string, explicitCwdArg?: string) => {
     // Support both new signature (projectId, worktree, resume, savedName)
     // and old signature (worktree, resume, savedName) for backward compat
     let projectId: string | undefined;
@@ -365,7 +373,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     const workDir = project?.dir ?? state.workspaceDir;
     if (!workDir) throw new Error('Session not started');
 
-    const cwd = worktreeName
+    // explicitCwd (M10b): when set, spawns Claude in the given directory rather than
+    // workDir. Used by the dashboard hero action to open in program.repos[0] without
+    // calling project:add. Hooks ARE installed at this cwd (see installer.install call
+    // below); write-after-ready requires the hook to fire at the same cwd (PLAN.md 3.1).
+    const cwd = explicitCwdArg
+      ? explicitCwdArg
+      : worktreeName
       ? path.join(workDir, '.claude', 'worktrees', worktreeName)
       : workDir;
     if (worktreeName && !fs.existsSync(cwd)) {

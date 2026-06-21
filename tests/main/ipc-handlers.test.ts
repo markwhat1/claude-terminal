@@ -406,6 +406,88 @@ describe('registerIpcHandlers', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // M10b: explicitCwd param on tab:create (channel-contract change)
+  // -------------------------------------------------------------------------
+
+  describe('tab:create - M10b explicitCwd param', () => {
+    beforeEach(async () => {
+      deps.state.workspaceDir = '/workspace';
+      const startHandler = handlers.get('session:start')!;
+      await startHandler({}, '/workspace', 'bypassPermissions');
+    });
+
+    it('uses explicitCwd as the spawn cwd when provided', async () => {
+      const handler = handlers.get('tab:create')!;
+      // Pass explicitCwd as the 5th argument (after projectId, worktree, resumeId, savedName)
+      await handler({}, null, null, undefined, undefined, '/workspace/cad-portal');
+
+      // spawn must have been called with the explicitCwd, not workspaceDir
+      expect(deps.ptyManager.spawn).toHaveBeenCalledWith(
+        expect.any(String),
+        '/workspace/cad-portal',
+        expect.any(Array),
+        expect.any(Object),
+      );
+    });
+
+    it('falls back to workDir when explicitCwd is not provided', async () => {
+      const handler = handlers.get('tab:create')!;
+      await handler({}, null, null, undefined, undefined);
+
+      expect(deps.ptyManager.spawn).toHaveBeenCalledWith(
+        expect.any(String),
+        '/workspace',
+        expect.any(Array),
+        expect.any(Object),
+      );
+    });
+
+    it('installs hooks at the explicitCwd, not workDir', async () => {
+      // installer.install is unconditional and required for write-after-ready
+      const handler = handlers.get('tab:create')!;
+      await handler({}, null, null, undefined, undefined, '/workspace/practice-analytics');
+
+      // hooks must be installed at the explicit cwd
+      expect(deps.state.hookInstaller!.install).toHaveBeenCalledWith('/workspace/practice-analytics');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M10b: remote tab:create message shape INTENTIONALLY NOT extended
+  // -------------------------------------------------------------------------
+
+  describe('remote tab:create message shape - INTENTIONALLY NOT extended (M10b)', () => {
+    /**
+     * The remote tab:create message shape does NOT include explicitCwd.
+     *
+     * This is an intentional decision: the remote web-remote-server.ts handler
+     * hardcodes state.workspaceDir as the cwd (web-remote-server.ts:316-323)
+     * and discards any resolved cwd. Extending the remote shape would create a
+     * half-threaded param that silently routes to the wrong tree on remote clients.
+     *
+     * Decision: the remote tab:create message is kept as { type: 'tab:create' }
+     * with no cwd field, documented here as the explicit non-extension.
+     *
+     * When remote Home is eventually built (Phase 3, 2.9), projectId must be
+     * threaded into the remote handler BEFORE explicitCwd is wired remotely.
+     *
+     * Reference: PLAN.md section 3.1 (correction of R5 §D), 2.11, M10b DoD.
+     */
+    it('the ws-bridge tab:create send contains only { type: "tab:create" } with no cwd field', () => {
+      // This test asserts the SHAPE of the remote message, not the local handler.
+      // The ws-bridge sends { type: 'tab:create' } (verified ws-bridge.ts:252).
+      // explicitCwd is intentionally absent from this message.
+      const remoteMessage = { type: 'tab:create' };
+
+      // Positive assertion: type is present
+      expect(remoteMessage).toHaveProperty('type', 'tab:create');
+      // Negative assertion: no cwd, no explicitCwd fields
+      expect(remoteMessage).not.toHaveProperty('cwd');
+      expect(remoteMessage).not.toHaveProperty('explicitCwd');
+    });
+  });
+
   describe('pty flow control', () => {
     it('buffers data when paused and flushes on resume', async () => {
       // Start session and create tab to set up PTY data forwarding

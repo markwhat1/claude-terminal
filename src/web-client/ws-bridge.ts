@@ -246,9 +246,19 @@ export class WebSocketBridge {
       deleteWorkspace: async (): Promise<void> => {},
 
       // Tab operations (most are stubs — the server controls tab lifecycle)
-      createTab: async (_projectId?: string, _worktree?: string | null): Promise<Tab> => {
+      //
+      // M10b: the local tab:create handler now accepts an explicitCwd param (the
+      // 5th positional arg). That param is INTENTIONALLY NOT forwarded here.
+      // web-remote-server.ts:316-323 hardcodes state.workspaceDir as the cwd and
+      // discards any resolved cwd, so sending explicitCwd would silently route a
+      // canned dashboard query to the wrong tree. The remote message stays as
+      // { type: 'tab:create' } with no cwd field until projectId is threaded into
+      // the remote handler (a deliberate future channel change, PLAN.md 3.1 /
+      // M10b DoD, correction of R5 §D).
+      createTab: async (_projectId?: string, _worktree?: string | null, _resumeSessionId?: string, _savedName?: string, _explicitCwd?: string): Promise<Tab> => {
         return new Promise((resolve, reject) => {
           this.pendingTabCreate = { resolve, reject };
+          // Remote message shape: no explicitCwd field. See comment above.
           this.send({ type: 'tab:create' });
         });
       },

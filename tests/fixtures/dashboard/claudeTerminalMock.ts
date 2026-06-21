@@ -34,11 +34,13 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   deleteWorkspace: (_wsId: string): Promise<void> => Promise.resolve(),
 
   // Tab operations
+  // M10b: explicitCwd added as optional 5th param (mirrors the preload signature update).
   createTab: (
     _projectId: string,
     _worktree?: string | null,
     _resumeSessionId?: string,
     _savedName?: string,
+    _explicitCwd?: string,
   ): Promise<Tab> =>
     Promise.resolve({
       id: 'tab-mock',

@@ -28,8 +28,14 @@ const api = {
     ipcRenderer.invoke('workspace:delete', wsId),
 
   // Tab operations
-  createTab: (projectId: string, worktree?: string | null, resumeSessionId?: string, savedName?: string): Promise<Tab> =>
-    ipcRenderer.invoke('tab:create', projectId, worktree ?? null, resumeSessionId, savedName),
+  // M10b: explicitCwd is the 5th param (after projectId, worktree, resumeSessionId,
+  // savedName). When set, the spawned tab runs in that directory rather than the
+  // project's workDir, WITHOUT calling project:add. Used by the dashboard hero action
+  // to open in program.repos[0]. The remote tab:create message shape is INTENTIONALLY
+  // NOT extended (PLAN.md 3.1, M10b): the ws-bridge sends { type: 'tab:create' } only,
+  // so a future remote Home cannot silently inherit a half-threaded cwd param.
+  createTab: (projectId: string, worktree?: string | null, resumeSessionId?: string, savedName?: string, explicitCwd?: string): Promise<Tab> =>
+    ipcRenderer.invoke('tab:create', projectId, worktree ?? null, resumeSessionId, savedName, explicitCwd),
   createTabWithWorktree: (projectId: string, worktreeName: string): Promise<Tab> =>
     ipcRenderer.invoke('tab:createWithWorktree', projectId, worktreeName),
   createShellTab: (shellType: string, afterTabId?: string, cwd?: string): Promise<Tab> =>
