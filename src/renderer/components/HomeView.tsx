@@ -1857,7 +1857,7 @@ export default function HomeView({
             onOpenExternal={onOpenExternal}
             settleClass={heroSettle}
             onReroll={canReroll ? handleReroll : null}
-            stallActive={stallActive}
+            stallActive={stallActive && !prefersReducedMotion()}
           />
         )}
 

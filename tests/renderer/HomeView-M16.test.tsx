@@ -135,6 +135,35 @@ describe('M16: stall pattern-interrupt (HomeView integration)', () => {
     expect(primary.className).toMatch(/stall-pulse/);
   });
 
+  // -------------------------------------------------------------------------
+  // Axis 2b: still motion-safe (PLAN.md 1.8). Under prefers-reduced-motion the
+  // pulse class is NOT applied even after the threshold.
+  // -------------------------------------------------------------------------
+
+  it('does NOT apply the pulse under prefers-reduced-motion, even past the threshold', () => {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('reduce'),
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+    try {
+      render(<HomeView {...baseProps({ stallInterrupt: true })} />);
+      act(() => {
+        vi.advanceTimersByTime(STALL_THRESHOLD_MS + 1000);
+      });
+      const primary = screen.getByTestId('home-hero-primary');
+      expect(primary.className).not.toMatch(/stall-pulse/);
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
   it('applies stall-dim to at least one periphery element after the threshold', () => {
     render(<HomeView {...baseProps({ stallInterrupt: true })} />);
 

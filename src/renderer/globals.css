@@ -125,6 +125,18 @@
   transition: opacity 400ms ease;
 }
 
+/* Defense in depth: even if a future render path applies these without the
+ * component-level prefers-reduced-motion gate, a reduced-motion user gets no
+ * animation or transition (PLAN.md 1.8 "still motion-safe"). */
+@media (prefers-reduced-motion: reduce) {
+  .stall-pulse {
+    animation: none;
+  }
+  .stall-dim {
+    transition: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
