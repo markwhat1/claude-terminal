@@ -27,6 +27,7 @@ import {
   type ProgramCard,
   type ClosedRecord,
 } from '@shared/program-board-state';
+import { classifyCardAvoidance } from '@shared/avoidance-classifier';
 import path from 'path';
 
 // ---------------------------------------------------------------------------
@@ -84,6 +85,10 @@ interface NeedsYouSnapshot {
   lastCommitIso: string | null;
   hadDecisionMarker: boolean;
   timeSensitive: string | null;
+  /** M13: blocked_on text at the time the card was in needs-you, for avoidance classification. */
+  blockedOn: string;
+  /** M13: needs_you_reasons at the time the card was in needs-you, for avoidance classification. */
+  needsYouReasons: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -356,12 +361,20 @@ export class ProgramBoardReader {
         // The card LEFT needs-you. Did a progress signal advance?
         if (this.isQualifyingClose(prev, currentCard, now)) {
           const decidedAndWorked = this.isDecidedAndWorked(prev, currentCard, now);
+          // M13: classify avoidance from the card's text at close time.
+          // Uses current card's text when present, falls back to snapshot.
+          // NEVER logged. NEVER fed to composeClaudeQuery.
+          const blockedOn = currentCard ? currentCard.blocked_on : prev.blockedOn;
+          const reasons = currentCard
+            ? currentCard.needs_you_reasons
+            : prev.needsYouReasons;
+          const avoidanceClose =
+            classifyCardAvoidance(blockedOn, reasons) !== null;
           this.closedSet.push({
             id,
             closedAt: now.toISOString(),
             decidedAndWorked,
-            // avoidanceClose is RESERVED-NULL in Phase 1; M4b NEVER sets it.
-            avoidanceClose: null,
+            avoidanceClose,
           });
           changed = true;
         }
@@ -478,6 +491,8 @@ export class ProgramBoardReader {
         lastCommitIso: card.git?.last_commit?.iso ?? null,
         hadDecisionMarker: this.cardHasDecisionMarker(card),
         timeSensitive: card.time_sensitive,
+        blockedOn: card.blocked_on,
+        needsYouReasons: [...card.needs_you_reasons],
       });
     }
     return map;
@@ -510,11 +525,16 @@ export class ProgramBoardReader {
         if (!e || typeof e !== 'object') continue;
         const rec = e as Record<string, unknown>;
         if (typeof rec.id !== 'string' || typeof rec.closedAt !== 'string') continue;
+        // avoidanceClose: Phase-1 records stored null; M13 records store boolean.
+        // Normalize: null stays null (backward-compatible); true/false preserved.
+        const ac = rec.avoidanceClose;
+        const avoidanceClose: boolean | null =
+          ac === true ? true : ac === false ? false : null;
         out.push({
           id: rec.id,
           closedAt: rec.closedAt,
           decidedAndWorked: rec.decidedAndWorked === true,
-          avoidanceClose: null, // reserved-null in Phase 1, normalized on load
+          avoidanceClose,
         });
       }
       return out;

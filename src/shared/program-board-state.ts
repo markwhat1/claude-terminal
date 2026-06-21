@@ -27,6 +27,7 @@ export const PROGRAM_BOARD_STATE_CHANNEL = 'program-board:state';
  */
 
 import path from 'path';
+import { classifyCardAvoidance } from './avoidance-classifier';
 
 // ---------------------------------------------------------------------------
 // Schema types (mirrors the program-board producer output)
@@ -122,14 +123,22 @@ export interface ProgramBoardBroadcast {
  *                       tag clearing with a fresh commit within ~1 day, the
  *                       dominant real close on the live board, 1.5).
  *   - avoidanceClose:   the Phase-2 avoidance-category overlay. RESERVED-NULL in
- *                       Phase 1; M4b NEVER sets it, only M13 does (zero
- *                       forward-coupling, the YAGNI rule).
+ *                       Phase 1; M4b NEVER sets it. M13 sets it to true when the
+ *                       closing card carried an avoidance category, false otherwise
+ *                       (never null after M13 sets it; null only on legacy records
+ *                       written before M13 shipped, treated as false by the renderer).
  */
 export interface ClosedRecord {
   id: string;
   closedAt: string;
   decidedAndWorked: boolean;
-  avoidanceClose: null;
+  /**
+   * Set by M13 when the closed card carried an avoidance category and the close
+   * was a qualifying progress-guarded crossing. false for non-avoidance closes.
+   * null for legacy records written before M13 (treated as false by the renderer,
+   * backward-compatible).
+   */
+  avoidanceClose: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -472,7 +481,8 @@ export function mapCardToItem(card: ProgramCard): DashboardItem {
     justResolved: false,
     decidedAndWorked: false,
     horizon: null,
-    avoidanceCategory: null,
+    // M13: classifier is pure, never logged, never fed to composeClaudeQuery.
+    avoidanceCategory: classifyCardAvoidance(card.blocked_on, card.needs_you_reasons),
     actions: {},
   };
 }

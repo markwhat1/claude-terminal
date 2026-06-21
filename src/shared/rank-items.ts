@@ -62,12 +62,20 @@ const AVOIDANCE_KEYWORDS: readonly string[] = [
 ];
 
 /**
- * Returns true when an item's slug or name matches the avoidance keyword set.
+ * Returns true when an item is classified as an avoidance item.
  *
- * Read-only: matches against slug and title (the human-readable name) only,
- * lowercased substring. Never touches detail/blocked_on, never logs.
+ * Two signals, applied in order:
+ *   1. item.avoidanceCategory (set by the M13 keyword classifier via mapCardToItem,
+ *      from blocked_on / needs_you text). This is the authoritative M13 signal.
+ *   2. Slug or title matches the legacy keyword set (the pre-M13 tie-break, kept
+ *      for live-tab items that do not go through mapCardToItem).
+ *
+ * Never touches detail/blocked_on directly, never logs.
  */
 function isAvoidanceItem(item: DashboardItem): boolean {
+  // M13 authoritative signal: avoidanceCategory set by the classifier.
+  if (item.avoidanceCategory !== null) return true;
+  // Legacy slug/name check (pre-M13, kept for live-tab items).
   const slug = item.slug.toLowerCase();
   const name = item.title.toLowerCase();
   return AVOIDANCE_KEYWORDS.some((kw) => slug.includes(kw) || name.includes(kw));

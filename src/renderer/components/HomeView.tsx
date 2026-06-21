@@ -295,12 +295,15 @@ interface HeroProps {
   onCopy: (text: string) => void;
   onOpenExternal: (url: string) => void;
   /**
-   * The settle class to apply to the hero card root (M8b-i).
-   * One of 'settle-ordinary' | 'settle-decided' | null.
+   * The settle class to apply to the hero card root (M8b-i / M13).
+   * One of 'settle-ordinary' | 'settle-decided' | 'settle-avoidance' | null.
    * null when the hero has no justResolved record or when reduced-motion is
    * active (count still ticks in both cases, 1.5).
+   *
+   * settle-avoidance (M13): the louder, still-motion-safe beat for an
+   * avoidance-category close. Still calm, still no confetti (1.4).
    */
-  settleClass: 'settle-ordinary' | 'settle-decided' | null;
+  settleClass: 'settle-ordinary' | 'settle-decided' | 'settle-avoidance' | null;
   /**
    * The re-roll "Not now" handler (M11 / 1.6). When provided, a quiet
    * "Not now" button renders in the footer (the 1.1 budget "not now" slot,
@@ -863,13 +866,18 @@ export default function HomeView({
     return map;
   }, [recentCloses]);
 
-  // Compute the settle class for a given item id (M8b-i, 1.5).
+  // Compute the settle class for a given item id (M8b-i, 1.5 / M13).
   // Returns null when prefers-reduced-motion is active (count still ticks).
+  // Three tiers (highest first):
+  //   settle-avoidance: M13 overlay, card had an avoidance category (louder beat).
+  //   settle-decided:   Phase-1 louder tier, decided-and-worked close.
+  //   settle-ordinary:  Phase-1 ordinary settle.
   const settleClassForId = useCallback(
-    (id: string): 'settle-ordinary' | 'settle-decided' | null => {
+    (id: string): 'settle-ordinary' | 'settle-decided' | 'settle-avoidance' | null => {
       const rec = recentCloseMap.get(id);
       if (!rec) return null;
       if (prefersReducedMotion()) return null;
+      if (rec.avoidanceClose === true) return 'settle-avoidance';
       return rec.decidedAndWorked ? 'settle-decided' : 'settle-ordinary';
     },
     [recentCloseMap],

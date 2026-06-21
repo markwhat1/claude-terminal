@@ -389,10 +389,14 @@ describe('ProgramBoardReader M4b resolved-set', () => {
   });
 
   // -------------------------------------------------------------------------
-  // (6) avoidanceClose is never set by M4b (reserved-null fixture)
+  // (6) avoidanceClose is false for a non-avoidance close (M13 update)
+  //
+  // M4b reserved this field as null. M13 now sets it to boolean: true when
+  // the closed card carried an avoidance category, false otherwise.
+  // A plain needs-your-decision card with empty blocked_on produces false.
   // -------------------------------------------------------------------------
 
-  it('never sets avoidanceClose (reserved-null in Phase 1)', async () => {
+  it('sets avoidanceClose:false for a non-avoidance close (M13)', async () => {
     const freshCommit = FRESH_COMMIT;
 
     writeFileSync(
@@ -431,12 +435,12 @@ describe('ProgramBoardReader M4b resolved-set', () => {
 
     const recent = reader.getRecentCloses();
     expect(recent).toHaveLength(1);
-    // Reserved-null: M4b never sets it.
-    expect(recent[0].avoidanceClose).toBeNull();
+    // M13: non-avoidance card gets avoidanceClose:false (not null).
+    expect(recent[0].avoidanceClose).toBe(false);
 
-    // Also assert it survives the persist round-trip as null.
+    // Also assert it survives the persist round-trip as false.
     const persisted = JSON.parse(readFileSync(closedFile, 'utf-8')) as Array<Record<string, unknown>>;
-    expect(persisted[0].avoidanceClose).toBeNull();
+    expect(persisted[0].avoidanceClose).toBe(false);
     reader.stop();
   });
 
