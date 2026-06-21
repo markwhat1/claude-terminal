@@ -35,9 +35,8 @@ export function createTabNamer(deps: TabNamerDeps) {
       // Run from homedir to avoid loading project CLAUDE.md files into context
       const child = execFile(cmd, baseArgs, { timeout: 30000, cwd: os.homedir() }, (err, stdout, stderr) => {
         if (err) {
-          log.error('[callHaikuForName] FAILED:', err.message);
-          log.error('[callHaikuForName] stderr:', stderr);
-          log.error('[callHaikuForName] stdout:', stdout);
+          // Log tab id + error message only; stderr/stdout may contain PHI
+          log.error('[callHaikuForName] FAILED for tab', tabId, ':', err.message);
           if (child.pid) {
             if (isWindows) {
               try { execFile('taskkill', ['/pid', String(child.pid), '/T', '/F']); } catch { /* best effort */ }
@@ -48,7 +47,7 @@ export function createTabNamer(deps: TabNamerDeps) {
           resolve();
           return;
         }
-        log.debug('[callHaikuForName] stdout:', JSON.stringify(stdout));
+        // Success stdout omitted from logs; it may contain prompt context
 
         const name = stdout.trim().replace(/^["']|["']$/g, '').substring(0, 50);
         if (name) {
@@ -71,7 +70,8 @@ export function createTabNamer(deps: TabNamerDeps) {
   }
 
   function generateTabName(tabId: string, prompt: string) {
-    log.debug('[generateTabName] starting for tab', tabId, 'prompt:', prompt.substring(0, 80));
+    // Log tab id only; prompt text may contain PHI
+    log.debug('[generateTabName] starting for tab', tabId);
     const namePrompt = `Generate a short tab title (3-5 words) for a coding conversation that starts with this message. Reply with ONLY the title, no quotes, no punctuation:\n\n${prompt.substring(0, 500)}`;
     callHaikuForName(tabId, namePrompt);
   }

@@ -53,7 +53,7 @@ export function createHookRouter(deps: HookRouterDeps) {
 
   function handleHookMessage(msg: IpcMessage) {
     const { tabId, event, data } = msg;
-    log.debug('[hook]', event, tabId, data ? data.substring(0, 80) : null);
+    log.debug('[hook]', event, tabId);
     const tab = deps.tabManager.getTab(tabId);
     if (!tab) return;
 

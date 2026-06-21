@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -9,6 +9,7 @@ let _logStream: fs.WriteStream | null = null;
 let _logFile: string | null = null;
 let _rotatedFile: string | null = null;
 let _bytesWritten = 0;
+let _initialized = false;
 const pending: Array<{ level: LogLevel; msg: string }> = [];
 
 const MAX_LOG_SIZE = 1 * 1024 * 1024; // 1 MB
@@ -56,15 +57,23 @@ export const log = {
   warn(...args: unknown[])  { emit('warn',  format(args)); },
   error(...args: unknown[]) { emit('error', format(args)); },
 
-  /** Start file logging to <dir>/.claude-terminal/logs/main.log */
-  init(dir: string) {
-    const logsDir = path.join(dir, '.claude-terminal', 'logs');
+  /**
+   * Start file logging to app.getPath('userData')/logs/main.log.
+   * The incoming `dir` argument is ignored for the log path; logs live outside
+   * every project tree so they never land in a git repo.
+   * Idempotent: the per-run wipe fires once per process; subsequent calls are no-ops.
+   */
+  init(_dir: string) {
+    if (_initialized) return;
+    _initialized = true;
+
+    const logsDir = path.join(app.getPath('userData'), 'logs');
     fs.mkdirSync(logsDir, { recursive: true });
 
     _logFile = path.join(logsDir, 'main.log');
     _rotatedFile = path.join(logsDir, 'main.log.1');
 
-    // Delete previous logs, start fresh each run
+    // Delete previous logs, start fresh each run (fires once per process)
     try { fs.unlinkSync(_rotatedFile); } catch { /* doesn't exist */ }
     try { fs.unlinkSync(_logFile); } catch { /* doesn't exist */ }
 
