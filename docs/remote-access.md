@@ -19,6 +19,16 @@ tailscale serve --bg 8473
 
 Both transports terminate at the same `WebRemoteServer`, so authentication, the message protocol, and the web client are identical regardless of transport. The web client always opens its WebSocket at the same origin it was served from (`ws-bridge.ts`), which is what lets either reverse proxy work without client changes.
 
+## Native Client Mode
+
+Besides the browser web client, the desktop app can connect to another machine's sessions. "Connect to a remote session" (on the startup screen and the running window's tab bar) opens a dialog for the host URL and 6-character code. On connect the app reuses the shared `RemoteSession` with a `WebSocketBridge` pointed at the host: `window.claudeTerminal` is swapped to the bridge and the global PTY listener is re-bound (`src/renderer/remote-swap.ts`), so the same tab/terminal UI drives the remote PTYs. The connection takes over the current window; Disconnect restores the local api and returns to the startup screen.
+
+**Remembered host + auto-reconnect.** With "Remember this host" checked, the connection (`{ url, token, autoConnect }`) is persisted in client settings, the token encrypted at rest via `safeStorage`. On the next launch, if no CLI start directory was given, the app auto-connects to the remembered host (a single attempt, bounded by the bridge's connect timeout); on failure it falls back to the local startup screen. A CLI start directory always wins over auto-reconnect, so the two never race.
+
+**Stable host token.** Auto-reconnect needs a code that does not change every activation, so the host persists a stable access token (`getOrCreateRemoteAccessToken`, encrypted at rest) and reuses it across activations. "Regenerate code" rotates it in place (`WebRemoteServer.setToken`, no transport restart, so the URL is unchanged) and drops connected clients, who must re-enter the new code.
+
+**Security.** The client stores the host token on disk, encrypted via the OS keychain (DPAPI on Windows) when available, plaintext-tagged otherwise. It grants full terminal control of the host, so it is gated behind the explicit "remember" opt-in and revocable by regenerating the code on the host (which invalidates any saved client token). Both ends are the user's machines on a private, ACL'd tailnet, and the host listens only on loopback.
+
 ## How It Works
 
 The diagram below shows the Cloudflare path; the Tailscale path is identical except the public quick tunnel is replaced by a private `tailscale serve` proxy to the fixed loopback port.
