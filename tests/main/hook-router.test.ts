@@ -3,10 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock electron Notification
 vi.mock('electron', () => ({
   Notification: Object.assign(
-    vi.fn(() => ({
-      on: vi.fn(),
-      show: vi.fn(),
-    })),
+    vi.fn(function () {
+      return {
+        on: vi.fn(),
+        show: vi.fn(),
+      };
+    }),
     { isSupported: vi.fn(() => true) },
   ),
 }));
@@ -16,6 +18,7 @@ vi.mock('@main/logger', () => ({
   log: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
 }));
 
+import { Notification } from 'electron';
 import { createHookRouter } from '@main/hook-router';
 import type { TabManager } from '@main/tab-manager';
 import type { IpcMessage } from '@shared/types';
@@ -168,5 +171,135 @@ describe('hook-router', () => {
     handleHookMessage({ tabId: 'tab-1', event: 'unknown:event', data: null });
 
     expect(deps.sendToRenderer).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // M10c: the injection idle gate + post-turn toast suppression
+  // -------------------------------------------------------------------------
+
+  describe('M10c injection idle gate', () => {
+    function makeInjectionDeps() {
+      const base = makeMockDeps();
+      const onIdle = vi.fn();
+      const consumeNotifySuppression = vi.fn(() => false);
+      return {
+        ...base,
+        // The hook-router calls these injected callbacks. onIdle is the gate
+        // (PLAN 3.1 step 4); consumeNotifySuppression is the post-turn toast
+        // suppression check (PLAN 3.1 step 4b).
+        onInjectionIdle: onIdle,
+        consumeInjectionNotifySuppression: consumeNotifySuppression,
+      };
+    }
+
+    it('calls onInjectionIdle when a REAL tab:ready first-idle arrives (the :104 case)', () => {
+      const d = makeInjectionDeps();
+      // The real TabManager.updateStatus mutates the tab; the mock returns the
+      // post-update tab, so getTab reports status 'idle' at the convergence point.
+      const tab = { id: 'tab-1', name: 'Tab 1', status: 'idle' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      // tab:ready with a session id reaches updateStatus(tabId,'idle') at :104.
+      const data = JSON.stringify({ sessionId: 'sess-abc', source: 'startup' });
+      handle({ tabId: 'tab-1', event: 'tab:ready', data });
+
+      // The gate fired at the convergence point with the first idle.
+      expect(d.onInjectionIdle).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('calls onInjectionIdle on the later tab:status:idle (the :126 convergence point)', () => {
+      const d = makeInjectionDeps();
+      const tab = { id: 'tab-1', name: 'Tab 1', status: 'idle' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('tab-1');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      expect(d.onInjectionIdle).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('does NOT call onInjectionIdle on a working transition (only on idle)', () => {
+      const d = makeInjectionDeps();
+      const tab = { id: 'tab-1', name: 'Tab 1' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:working', data: null });
+
+      expect(d.onInjectionIdle).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call onInjectionIdle when tab:ready carries no sessionId (status -> new, not idle)', () => {
+      const d = makeInjectionDeps();
+      const tab = { id: 'tab-1', name: 'Tab 1' };
+      // updateStatus is a no-op spy, so getTab after the switch still returns the
+      // same tab. The gate must only fire when the resulting status is 'idle'.
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue({ ...tab, status: 'new' });
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      const data = JSON.stringify({ sessionId: '', source: 'startup' });
+      handle({ tabId: 'tab-1', event: 'tab:ready', data });
+
+      expect(d.onInjectionIdle).not.toHaveBeenCalled();
+    });
+
+    it('suppresses the post-turn toast for an injected, non-active tab when the flag is set', () => {
+      const d = makeInjectionDeps();
+      d.consumeInjectionNotifySuppression = vi.fn(() => true); // flag is set
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      // The injected tab is NOT renderer-active in this case (the divergence
+      // PLAN 3.1 step 4b describes), so the normal path would fire a toast.
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('some-other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      // No Notification was constructed (the toast is suppressed).
+      expect(Notification).not.toHaveBeenCalled();
+      expect(d.consumeInjectionNotifySuppression).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('still fires the post-turn toast for a non-injected non-active tab (suppression flag absent)', () => {
+      const d = makeInjectionDeps();
+      d.consumeInjectionNotifySuppression = vi.fn(() => false); // not an injected tab
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('some-other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      expect(Notification).toHaveBeenCalled();
+    });
+
+    it('still preserves the requires_response toast even for an injected tab (the chime is not demoted)', () => {
+      const d = makeInjectionDeps();
+      d.consumeInjectionNotifySuppression = vi.fn(() => true);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('some-other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:input', data: null });
+
+      // The needs-you chime is preserved: a Notification IS constructed and the
+      // injection suppression flag is NOT consumed by the input event.
+      expect(Notification).toHaveBeenCalled();
+    });
+
+    it('works without injection callbacks wired (backward compatible)', () => {
+      const d = makeMockDeps(); // no onInjectionIdle / consume callbacks
+      const tab = { id: 'tab-1', name: 'Tab 1' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      // Must not throw when the optional injection deps are absent.
+      expect(() =>
+        handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null }),
+      ).not.toThrow();
+    });
   });
 });

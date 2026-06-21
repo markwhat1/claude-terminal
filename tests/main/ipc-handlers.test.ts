@@ -160,6 +160,14 @@ function makeMockDeps(): IpcHandlerDeps {
     activateRemoteAccess: vi.fn(async () => ({ status: 'connecting' as const, tunnelUrl: null, token: 'test-token', error: null })),
     deactivateRemoteAccess: vi.fn(async () => {}),
     getRemoteAccessInfo: vi.fn(() => ({ status: 'inactive' as const, tunnelUrl: null, token: null, error: null })),
+    queryInjector: {
+      arm: vi.fn(),
+      isArmed: vi.fn(() => false),
+      onIdle: vi.fn(),
+      consumeNotifySuppression: vi.fn(() => false),
+      retry: vi.fn(),
+      clear: vi.fn(),
+    } as unknown as IpcHandlerDeps['queryInjector'],
   };
 }
 
@@ -193,6 +201,7 @@ describe('registerIpcHandlers', () => {
       'remote:activate', 'remote:deactivate', 'remote:getInfo',
       'instance:getHue',
       'program-board:getState',
+      'claude:injectQuery',
     ];
     for (const channel of expectedHandlers) {
       expect(handlers.has(channel), `missing handler: ${channel}`).toBe(true);
@@ -485,6 +494,115 @@ describe('registerIpcHandlers', () => {
       // Negative assertion: no cwd, no explicitCwd fields
       expect(remoteMessage).not.toHaveProperty('cwd');
       expect(remoteMessage).not.toHaveProperty('explicitCwd');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M10c: tab:create permissionModeOverride param
+  // -------------------------------------------------------------------------
+
+  describe('tab:create - M10c permissionModeOverride (the --plan wedge fix)', () => {
+    it('an injection spawn in a PLAN-mode workspace produces --dangerously-skip-permissions, NOT --plan', async () => {
+      // The workspace mode is plan; without the override the spawn would inherit
+      // PERMISSION_FLAGS.plan = ['--plan'] and could wedge the idle gate.
+      deps.state.workspaceDir = '/workspace';
+      const startHandler = handlers.get('session:start')!;
+      await startHandler({}, '/workspace', 'plan');
+      expect(deps.state.permissionMode).toBe('plan');
+
+      const handler = handlers.get('tab:create')!;
+      // 6th arg = permissionModeOverride.
+      await handler({}, null, null, undefined, undefined, '/workspace/cad-portal', 'bypassPermissions');
+
+      const spawnArgs = (deps.ptyManager.spawn as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+      const cliArgs = spawnArgs[2] as string[];
+      expect(cliArgs).toContain('--dangerously-skip-permissions');
+      expect(cliArgs).not.toContain('--plan');
+    });
+
+    it('falls back to the workspace mode when no override is passed', async () => {
+      deps.state.workspaceDir = '/workspace';
+      const startHandler = handlers.get('session:start')!;
+      await startHandler({}, '/workspace', 'plan');
+
+      const handler = handlers.get('tab:create')!;
+      await handler({}, null, null, undefined, undefined, '/workspace/cad-portal');
+
+      const spawnArgs = (deps.ptyManager.spawn as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+      const cliArgs = spawnArgs[2] as string[];
+      expect(cliArgs).toContain('--plan');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M10c: claude:injectQuery handler (arm-before-resolve, MAIN-active, override)
+  // -------------------------------------------------------------------------
+
+  describe('claude:injectQuery handler (M10c)', () => {
+    beforeEach(async () => {
+      deps.state.workspaceDir = '/workspace';
+      const startHandler = handlers.get('session:start')!;
+      await startHandler({}, '/workspace', 'plan'); // plan mode on purpose
+    });
+
+    it('creates the tab via explicitCwd and returns the new tab id', async () => {
+      const handler = handlers.get('claude:injectQuery')!;
+      const id = await handler({}, { explicitCwd: '/workspace/cad-portal', query: 'Open this repo so I can make the pending decision.' });
+
+      expect(id).toBe('tab-1');
+      expect(deps.ptyManager.spawn).toHaveBeenCalledWith(
+        'tab-1',
+        '/workspace/cad-portal',
+        expect.any(Array),
+        expect.any(Object),
+      );
+    });
+
+    it('forces bypassPermissions even in a plan-mode workspace (the --plan wedge fix)', async () => {
+      const handler = handlers.get('claude:injectQuery')!;
+      await handler({}, { explicitCwd: '/workspace/cad-portal', query: 'q' });
+
+      const spawnArgs = (deps.ptyManager.spawn as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+      const cliArgs = spawnArgs[2] as string[];
+      expect(cliArgs).toContain('--dangerously-skip-permissions');
+      expect(cliArgs).not.toContain('--plan');
+    });
+
+    it('arms the injector with the tab id and query BEFORE resolving (arm-before-resolve)', async () => {
+      const handler = handlers.get('claude:injectQuery')!;
+      const query = 'Open this repo so I can make the pending decision.';
+      await handler({}, { explicitCwd: '/workspace/cad-portal', query });
+
+      expect(deps.queryInjector!.arm).toHaveBeenCalledWith('tab-1', query);
+      // The arm happened during the awaited handler, so by the time it resolves
+      // the pending entry + 30s timeout already exist in MAIN.
+    });
+
+    it('makes the injected tab MAIN-active (post-turn toast suppression, step 4b)', async () => {
+      const handler = handlers.get('claude:injectQuery')!;
+      await handler({}, { explicitCwd: '/workspace/cad-portal', query: 'q' });
+
+      expect(deps.tabManager.setActiveTab).toHaveBeenCalledWith('tab-1');
+    });
+
+    it('installs hooks at the injection cwd (write-after-ready depends on the hook firing)', async () => {
+      const handler = handlers.get('claude:injectQuery')!;
+      await handler({}, { explicitCwd: '/workspace/clinical-notes', query: 'q' });
+
+      expect(deps.state.hookInstaller!.install).toHaveBeenCalledWith('/workspace/clinical-notes');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M10c: tab:close / onExit clear the pending injection
+  // -------------------------------------------------------------------------
+
+  describe('M10c injection cleanup on close', () => {
+    it('tab:close clears the pending injection', async () => {
+      const handler = handlers.get('tab:close')!;
+      await handler({}, 'tab-1');
+
+      expect(deps.queryInjector!.clear).toHaveBeenCalledWith('tab-1');
     });
   });
 

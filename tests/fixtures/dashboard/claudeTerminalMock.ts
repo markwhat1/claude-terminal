@@ -12,6 +12,8 @@
 import type { ClaudeTerminalApi } from '../../../src/preload';
 import type { Tab, RemoteAccessInfo, HookExecutionStatus, ProjectConfig, WorkspaceConfig, PermissionMode, RepoHookConfig, SavedTab } from '../../../src/shared/types';
 import type { ShellOption } from '../../../src/shared/platform';
+import type { InjectStatus } from '../../../src/shared/injection';
+import type { ClaudeQueryLine } from '../../../src/shared/home-copy';
 
 const noop = (): void => undefined;
 const noopCleanup = (): (() => void) => () => undefined;
@@ -154,6 +156,12 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   // Program board (M5, local-only channel)
   getProgramBoardState: (): Promise<unknown> => Promise.resolve(null),
   onProgramBoardState: (_callback: (state: unknown) => void): (() => void) =>
+    noopCleanup(),
+
+  // Claude injection (M10c, local-only channel pair)
+  injectQuery: (_payload: { explicitCwd?: string; query: ClaudeQueryLine; projectId?: string | null }): Promise<string> =>
+    Promise.resolve('tab-mock'),
+  onInjectStatus: (_callback: (status: InjectStatus) => void): (() => void) =>
     noopCleanup(),
 
   // Window title

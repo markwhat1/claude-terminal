@@ -2,6 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { PermissionMode, Tab, SavedTab, RemoteAccessInfo, RepoHookConfig, HookExecutionStatus, ProjectConfig, WorkspaceConfig } from './shared/types';
 import type { ShellOption } from './shared/platform';
 import { PROGRAM_BOARD_STATE_CHANNEL } from './shared/program-board-state';
+import {
+  CLAUDE_INJECT_QUERY_CHANNEL,
+  CLAUDE_INJECT_STATUS_CHANNEL,
+  type InjectStatus,
+} from './shared/injection';
+import type { ClaudeQueryLine } from './shared/home-copy';
 
 const api = {
   // Platform info
@@ -250,6 +256,24 @@ const api = {
     ipcRenderer.on(PROGRAM_BOARD_STATE_CHANNEL, handler);
     return () => {
       ipcRenderer.removeListener(PROGRAM_BOARD_STATE_CHANNEL, handler);
+    };
+  },
+
+  // Claude injection (M10c, local-only, never forwarded to remote clients).
+  // injectQuery creates the tab in MAIN, arms the pending injection + 30s timeout
+  // BEFORE it resolves, and returns the new tab id. injectStatus carries
+  // pending/success/failure for the spawning tab's pending affordance. The single
+  // channel constant is used for both send and on, so a typo cannot ship the feed
+  // dead (PLAN.md 3.1 / 1.5b).
+  injectQuery: (payload: { explicitCwd?: string; query: ClaudeQueryLine; projectId?: string | null }): Promise<string> =>
+    ipcRenderer.invoke(CLAUDE_INJECT_QUERY_CHANNEL, payload),
+
+  onInjectStatus: (callback: (status: InjectStatus) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: InjectStatus) =>
+      callback(status);
+    ipcRenderer.on(CLAUDE_INJECT_STATUS_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(CLAUDE_INJECT_STATUS_CHANNEL, handler);
     };
   },
 };

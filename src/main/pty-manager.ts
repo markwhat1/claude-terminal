@@ -67,6 +67,16 @@ export class PtyManager {
     this.ptys.get(tabId)?.process.write(data);
   }
 
+  /**
+   * Whether a live PTY exists for the tab. The injection idle gate checks this
+   * before writing the canned query, because write() is a silent no-op on a dead
+   * PTY and the gate must surface a failure rather than drop the query silently
+   * (M10c, PLAN 3.1 step 6).
+   */
+  hasPty(tabId: string): boolean {
+    return this.ptys.has(tabId);
+  }
+
   resize(tabId: string, cols: number, rows: number): void {
     const managed = this.ptys.get(tabId);
     if (managed) {

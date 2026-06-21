@@ -13,6 +13,21 @@ export interface HookRouterDeps {
   getMainWindow: () => { show: () => void; focus: () => void } | null;
   hookEngine: { emit: (event: string, context: Record<string, string>) => Promise<void> } | null;
   getProjectName: (projectId: string) => string | undefined;
+  /**
+   * M10c: the injection idle gate (PLAN 3.1 step 4). Called at the CONVERGENCE
+   * point (where a tab first reaches 'idle', covering both the tab:ready first
+   * idle and the later tab:status:idle). The QueryInjector decides whether the
+   * tab is tracked and writes the canned query on the first idle only. Optional
+   * so the router stays constructable in tests that do not exercise injection.
+   */
+  onInjectionIdle?: (tabId: string) => void;
+  /**
+   * M10c: the post-turn toast suppression (PLAN 3.1 step 4b). Returns true (and
+   * consumes the flag) when the injected tab's first post-injection Stop idle
+   * should fire NO OS notification, so a watched injected tab that is not
+   * MAIN-active does not toast on the turn it finishes. Optional.
+   */
+  consumeInjectionNotifySuppression?: (tabId: string) => boolean;
 }
 
 export function createHookRouter(deps: HookRouterDeps) {
@@ -122,14 +137,21 @@ export function createHookRouter(deps: HookRouterDeps) {
         deps.tabManager.updateStatus(tabId, 'working');
         break;
 
-      case 'tab:status:idle':
+      case 'tab:status:idle': {
         deps.tabManager.updateStatus(tabId, 'idle');
-        if (!isActive && tab) {
+        // M10c step 4b: the post-turn "finished working" toast is suppressed for
+        // an injected tab whose do-not-notify flag is still set, regardless of
+        // active state. consumeInjectionNotifySuppression consumes the flag so
+        // only the FIRST post-injection Stop idle is silenced.
+        const suppressInjectionToast =
+          deps.consumeInjectionNotifySuppression?.(tabId) ?? false;
+        if (!isActive && tab && !suppressInjectionToast) {
           const projectName = tab.projectId ? deps.getProjectName(tab.projectId) : undefined;
           const title = projectName ? `${projectName} - ${tab.name}` : tab.name;
           notifyTabActivity(tabId, title, 'Claude has finished working');
         }
         break;
+      }
 
       case 'tab:status:input':
         deps.tabManager.updateStatus(tabId, 'requires_response');
@@ -166,6 +188,15 @@ export function createHookRouter(deps: HookRouterDeps) {
 
     const updated = deps.tabManager.getTab(tabId);
     if (updated) {
+      // M10c step 4: the injection idle gate is pinned to the CONVERGENCE point,
+      // the tab:updated emission where the resulting status is 'idle'. This
+      // covers BOTH the tab:ready first idle (:104) and the later tab:status:idle
+      // (:126), which is why gating only the tab:status:idle case would miss the
+      // FIRST idle the freshly spawned tab reaches and the query would never type
+      // in. The QueryInjector's once-flag makes every later idle a no-op.
+      if (updated.status === 'idle') {
+        deps.onInjectionIdle?.(tabId);
+      }
       deps.sendToRenderer('tab:updated', updated);
     }
   }

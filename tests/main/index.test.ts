@@ -109,6 +109,10 @@ import {
   REMOTE_FORWARDED_CHANNELS,
   buildBroadcastPayload,
 } from '@main/index';
+import {
+  CLAUDE_INJECT_QUERY_CHANNEL,
+  CLAUDE_INJECT_STATUS_CHANNEL,
+} from '@shared/injection';
 
 // ---------------------------------------------------------------------------
 // (1) REMOTE_FORWARDED_CHANNELS membership assertions
@@ -135,6 +139,18 @@ describe('REMOTE_FORWARDED_CHANNELS', () => {
 
   it('does NOT contain PROGRAM_BOARD_STATE_CHANNEL (constant value)', () => {
     expect(REMOTE_FORWARDED_CHANNELS.has(PROGRAM_BOARD_STATE_CHANNEL)).toBe(false);
+  });
+
+  // M10c: the injection channel pair is renderer-only (the action discards the
+  // resolved cwd remotely, PLAN.md 3.1/3.5). Neither channel is forwarded.
+  it('does NOT contain claude:injectQuery', () => {
+    expect(REMOTE_FORWARDED_CHANNELS.has('claude:injectQuery')).toBe(false);
+    expect(REMOTE_FORWARDED_CHANNELS.has(CLAUDE_INJECT_QUERY_CHANNEL)).toBe(false);
+  });
+
+  it('does NOT contain claude:injectStatus', () => {
+    expect(REMOTE_FORWARDED_CHANNELS.has('claude:injectStatus')).toBe(false);
+    expect(REMOTE_FORWARDED_CHANNELS.has(CLAUDE_INJECT_STATUS_CHANNEL)).toBe(false);
   });
 });
 
@@ -176,6 +192,13 @@ describe('buildBroadcastPayload payload shape', () => {
 
   it('returns null for program-board:state (not forwarded)', () => {
     const result = buildBroadcastPayload(PROGRAM_BOARD_STATE_CHANNEL, [{ programs: [] }]);
+    expect(result).toBeNull();
+  });
+
+  it('returns null for claude:injectStatus (not forwarded)', () => {
+    const result = buildBroadcastPayload(CLAUDE_INJECT_STATUS_CHANNEL, [
+      { tabId: 'tab-1', kind: 'pending' },
+    ]);
     expect(result).toBeNull();
   });
 

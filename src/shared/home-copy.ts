@@ -197,6 +197,26 @@ export const HOME_COPY = {
   showMore: 'Show more',
 } as const;
 
+// ---------------------------------------------------------------------------
+// Injection pending affordance copy (1.5b / M10c)
+// ---------------------------------------------------------------------------
+
+/**
+ * The calm starting line on the spawning tab while the injection is armed. No
+ * working vocabulary, no spinner: it reassures without reading as "Claude is
+ * working" on an empty pane (1.5b).
+ */
+export const INJECTION_STARTING_COPY =
+  'Starting your session. The first step will be typed in for you.';
+
+/**
+ * The single ~4s threshold copy change (1.5b). A coarse, honest, non-metronome
+ * cue: one step at one threshold so a time-blind brain reads "still going, not
+ * hung" and does not disengage at second 6.
+ */
+export const INJECTION_THRESHOLD_COPY =
+  'Still starting, this can take a few seconds.';
+
 /** The closed-count line (1.5). Always "last 24h", NEVER "today". */
 export function closedRecentLine(count: number): string {
   return `${count} closed, last 24h`;

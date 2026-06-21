@@ -101,7 +101,7 @@ The `session:start` channel is retained for backward compatibility. It wraps `wo
 
 | Channel | Direction | Pattern | Renderer Signature | Payload |
 |---|---|---|---|---|
-| `tab:create` | renderer -> main | invoke | `createTab(projectId, worktree?, resumeSessionId?, savedName?)` | `projectId: string` -> `Tab` |
+| `tab:create` | renderer -> main | invoke | `createTab(projectId, worktree?, resumeSessionId?, savedName?, explicitCwd?)` | `projectId: string`, `explicitCwd?` (M10b), `permissionModeOverride?` (M10c, handler arg) -> `Tab` |
 | `tab:createShell` | renderer -> main | invoke | `createShellTab(shellType, afterTabId?, cwd?)` | `shellType: string` -> `Tab` |
 | `tab:close` | renderer -> main | invoke | `closeTab(tabId, removeWorktree?)` | `tabId: string`, `removeWorktree?: boolean` |
 | `tab:switch` | renderer -> main | invoke | `switchTab(tabId)` | `tabId: string` |
@@ -186,6 +186,26 @@ The channel name constant `PROGRAM_BOARD_STATE_CHANNEL` is defined in `src/share
 | `program-board:getState` | local-only | `handleMessage` has no generic passthrough (3.6) |
 | `program-board:state` | local-only | absent from `REMOTE_FORWARDED_CHANNELS` |
 
+### Claude Injection (M10c)
+
+| Channel | Direction | Pattern | Renderer Signature | Payload |
+|---|---|---|---|---|
+| `claude:injectQuery` | renderer -> main | invoke | `injectQuery(payload)` | `{ explicitCwd?, query: ClaudeQueryLine, projectId? }` -> `tabId: string` |
+| `claude:injectStatus` | main -> renderer | webContents.send | `onInjectStatus(cb)` | `status: InjectStatus` (pending / success / failure) |
+
+`claude:injectQuery` is the dashboard hero's "open Claude with a canned query" action. The main handler creates the tab via the M10b `explicitCwd` route with a `bypassPermissions` override (so a plan-mode workspace cannot wedge the idle gate), makes the tab main-active, ARMS the `QueryInjector` pending entry plus the mandatory 30s timeout BEFORE it resolves (the arm-before-resolve property: a renderer reload after the awaited round-trip cannot orphan the query), and returns the new tab id. The canned query is written on the FIRST idle (the hook-router idle gate, pinned to the convergence point covering both the `tab:ready` first idle and the later `tab:status:idle`), using CR not CRLF. A dead PTY at write time or the 30s timeout surface a `claude:injectStatus` failure with a one-click retry.
+
+Both channels are **local-only**. The remote `tab:create` handler discards the resolved cwd (`web-remote-server.ts:316-323`), so a canned query would run against the wrong tree; the action is desktop-only in Phase 1. Neither channel is in `REMOTE_FORWARDED_CHANNELS`, and `handleMessage` has no generic passthrough, so `claude:injectQuery` is unreachable from a remote client.
+
+The channel-name constants `CLAUDE_INJECT_QUERY_CHANNEL` and `CLAUDE_INJECT_STATUS_CHANNEL` live in `src/shared/injection.ts`; ONE constant per channel serves both the send site and the `on`/`handle` site, so a typo cannot ship the feed dead.
+
+#### Remote parity table
+
+| Channel | Remote (WebSocket) | Notes |
+|---|---|---|
+| `claude:injectQuery` | local-only | remote `tab:create` discards cwd; no generic passthrough in `handleMessage` |
+| `claude:injectStatus` | local-only | absent from `REMOTE_FORWARDED_CHANNELS` |
+
 ### Git
 
 | Channel | Direction | Pattern | Renderer Signature | Payload |
@@ -216,6 +236,7 @@ Main-to-renderer events are subscribed in the preload via wrapper methods that r
 | `onProjectRemoved` | `project:removed` | `(projectId: string) => void` |
 | `onProjectSwitch` | `tab:projectSwitch` | `(projectId: string) => void` |
 | `onProgramBoardState` | `program-board:state` | `(state: unknown) => void` |
+| `onInjectStatus` | `claude:injectStatus` | `(status: InjectStatus) => void` |
 
 ### Cleanup Pattern in App.tsx
 

@@ -10,6 +10,8 @@ import StartupDialog from './components/StartupDialog';
 import TabBar from './components/TabBar';
 import Terminal from './components/Terminal';
 import HomeView, { type HomeLoadStatus } from './components/HomeView';
+import { InjectionOverlayHost } from './components/InjectionOverlayHost';
+import type { InjectionRetryPayload } from './hooks/useInjectionStatus';
 import type { ProgramBoardState, ProgramBoardBroadcast, ClosedRecord } from '../shared/program-board-state';
 import { resolvePreferredPowershell } from '../shared/dashboard-ui-helpers';
 import { destroyTerminal } from './components/terminalCache';
@@ -151,6 +153,22 @@ export default function App() {
     setActiveTabId(tab.id);
     await window.claudeTerminal.switchTab(tab.id);
   }, [workspaceDir]);
+
+  // M10c: remember the last injection payload per spawning tab so the failed-start
+  // surface can re-run the SAME canned query into the SAME tab. The 30s fail-safe
+  // itself lives in MAIN (QueryInjector), so a renderer reload cannot orphan the
+  // query; this ref only serves the one-click retry affordance.
+  const injectionPayloads = useRef<Map<string, InjectionRetryPayload>>(new Map());
+
+  const handleRetryInjection = useCallback(async (tabId: string) => {
+    const payload = injectionPayloads.current.get(tabId);
+    if (!payload) return;
+    await window.claudeTerminal.injectQuery({
+      explicitCwd: payload.explicitCwd,
+      query: payload.query,
+      projectId: payload.projectId,
+    });
+  }, []);
 
   const handleCopyToClipboard = useCallback((text: string) => {
     void navigator.clipboard?.writeText(text);
@@ -670,6 +688,12 @@ export default function App() {
               isVisible={tab.id === activeTabId}
             />
           ))}
+          {/* M10c: the 1.5b success-pending affordance, rendered over the
+              spawning tab's terminal surface off claude:injectStatus. */}
+          <InjectionOverlayHost
+            activeTabId={activeTabId}
+            onRetry={handleRetryInjection}
+          />
           {selectActiveView(activeTabId, homeTabId, tabs) === 'home' && (
             <HomeView
               programBoardState={programBoardState}

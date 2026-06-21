@@ -71,6 +71,7 @@ import { WorkspaceStore } from './workspace-store';
 import { createTabNamer } from './tab-namer';
 import { createHookRouter } from './hook-router';
 import { registerIpcHandlers, type AppState, type WirePtyToTabFn } from './ipc-handlers';
+import { QueryInjector } from './query-injector';
 import { TunnelManager } from './tunnel-manager';
 import { WebRemoteServer } from './web-remote-server';
 import type { RemoteAccessInfo } from '@shared/types';
@@ -289,6 +290,16 @@ const { generateTabName, generateResumeTabName, cleanupNamingFlag } = createTabN
   tabManager, sendToRenderer, persistSessions,
 });
 
+// M10c: the single QueryInjector instance owns the pending-injection state. It is
+// injected into BOTH the ipc-handlers (the claude:injectQuery handler arms it) and
+// the hook-router (the idle gate clears it). The injectStatus broadcast is sent
+// via sendToRenderer, which does NOT forward it to remote clients (the channel is
+// absent from REMOTE_FORWARDED_CHANNELS), so the feed stays desktop-only.
+const queryInjector = new QueryInjector({
+  ptyManager,
+  sendStatus: (channel, status) => sendToRenderer(channel, status),
+});
+
 const { handleHookMessage, clearPendingNotification } = createHookRouter({
   tabManager, sendToRenderer, persistSessions,
   generateTabName, generateResumeTabName, cleanupNamingFlag,
@@ -298,6 +309,10 @@ const { handleHookMessage, clearPendingNotification } = createHookRouter({
     const ctx = state.projectManager?.getProject(projectId);
     return ctx ? path.basename(ctx.dir) : undefined;
   },
+  // M10c: the idle gate (clears the pending injection on the first idle) and the
+  // post-turn toast suppression for the watched injected tab.
+  onInjectionIdle: (tabId) => queryInjector.onIdle(tabId),
+  consumeInjectionNotifySuppression: (tabId) => queryInjector.consumeNotifySuppression(tabId),
 });
 
 // ---------------------------------------------------------------------------
@@ -453,6 +468,7 @@ app.on('ready', async () => {
     tabManager, ptyManager, settings, workspaceStore, state,
     sendToRenderer, persistSessions, cleanupNamingFlag, clearPendingNotification,
     activateRemoteAccess, deactivateRemoteAccess, getRemoteAccessInfo,
+    queryInjector,
   });
   cleanupIpcHandlers = ipcResult.cleanup;
   wirePtyToTabFn = ipcResult.wirePtyToTab;

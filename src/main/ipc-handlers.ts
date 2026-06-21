@@ -7,6 +7,8 @@ import type { PermissionMode, RemoteAccessInfo, RepoHookConfig, Tab, ProjectConf
 import { getAllShellOptions, type ShellOption } from '@shared/platform';
 import { PERMISSION_FLAGS } from '@shared/types';
 import { isAllowedExternalScheme } from '@shared/url-scheme';
+import type { ClaudeQueryLine } from '@shared/home-copy';
+import type { QueryInjector } from './query-injector';
 import { WorktreeManager } from './worktree-manager';
 import { HookInstaller } from './hook-installer';
 import { ProjectManager, type ProjectContext } from './project-manager';
@@ -54,6 +56,12 @@ export interface IpcHandlerDeps {
   activateRemoteAccess: () => Promise<RemoteAccessInfo>;
   deactivateRemoteAccess: () => Promise<void>;
   getRemoteAccessInfo: () => RemoteAccessInfo;
+  /**
+   * M10c: the MAIN-owned pending-injection state for the claude:injectQuery
+   * handler. The same instance is injected into the hook-router so the idle gate
+   * can clear it. Optional so existing handler tests construct without it.
+   */
+  queryInjector?: QueryInjector;
 }
 
 /** Resolve hooksDir based on dev/production mode */
@@ -95,6 +103,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
 
     proc.onExit(() => {
       flowControl.delete(tab.id);
+      // M10c: a dead tab cannot hold a stale injection write; clear the pending
+      // entry + timer so the Map cannot grow unbounded (PLAN.md 3.1 step 6).
+      deps.queryInjector?.clear(tab.id);
       if (tabManager.getTab(tab.id)) {
         deps.cleanupNamingFlag(tab.id);
         tabManager.removeTab(tab.id);
@@ -342,26 +353,43 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
   // wrong tree. The remote handler is left as { type: 'tab:create' } with no cwd field.
   // When a future remote Home is built (Phase 3, PLAN.md 2.9) projectId must first be
   // threaded into the remote handler before explicitCwd is exposed remotely.
-  ipcMain.handle('tab:create', async (_event, projectIdOrWorktree: string | null, worktreeNameOrResumeId?: string | null, resumeSessionIdOrSavedName?: string, savedNameArg?: string, explicitCwdArg?: string) => {
-    // Support both new signature (projectId, worktree, resume, savedName)
-    // and old signature (worktree, resume, savedName) for backward compat
+  //
+  // M10c: permissionModeOverride is the 6th positional arg. When set, the spawned
+  // tab's permission flags come from PERMISSION_FLAGS[override] instead of the
+  // workspace permissionMode. The dashboard injection passes 'bypassPermissions'
+  // so a plan-mode workspace cannot wedge the idle gate via the --plan bug (the
+  // idle gate never fires if the tab errors at startup, PLAN.md 3.1 step 8).
+  /**
+   * Shared Claude-tab creation used by both the tab:create handler and the M10c
+   * claude:injectQuery handler. Resolves the cwd (explicitCwd > worktree >
+   * workDir), installs hooks at that cwd, applies the per-call permission
+   * override, spawns the PTY, and wires it. Returns the created Tab.
+   */
+  function createClaudeTab(opts: {
+    projectIdOrWorktree: string | null;
+    worktreeNameOrResumeId?: string | null;
+    resumeSessionIdOrSavedName?: string;
+    savedNameArg?: string;
+    explicitCwdArg?: string;
+    permissionModeOverrideArg?: PermissionMode;
+  }): Tab {
     let projectId: string | undefined;
     let worktreeName: string | null;
     let resumeSessionId: string | undefined;
     let savedName: string | undefined;
 
     // Detect new vs old signature: if first arg matches a known project ID, use new signature
-    const isNewSignature = projectIdOrWorktree && state.projectManager?.getProject(projectIdOrWorktree);
+    const isNewSignature = opts.projectIdOrWorktree && state.projectManager?.getProject(opts.projectIdOrWorktree);
     if (isNewSignature) {
-      projectId = projectIdOrWorktree!;
-      worktreeName = (worktreeNameOrResumeId as string | null) ?? null;
-      resumeSessionId = resumeSessionIdOrSavedName;
-      savedName = savedNameArg;
+      projectId = opts.projectIdOrWorktree!;
+      worktreeName = (opts.worktreeNameOrResumeId as string | null) ?? null;
+      resumeSessionId = opts.resumeSessionIdOrSavedName;
+      savedName = opts.savedNameArg;
     } else {
       // Legacy: first arg is worktreeName
-      worktreeName = projectIdOrWorktree;
-      resumeSessionId = worktreeNameOrResumeId as string | undefined;
-      savedName = resumeSessionIdOrSavedName;
+      worktreeName = opts.projectIdOrWorktree;
+      resumeSessionId = opts.worktreeNameOrResumeId as string | undefined;
+      savedName = opts.resumeSessionIdOrSavedName;
       // Use first project
       if (state.projectManager) {
         const projects = state.projectManager.getAllProjects();
@@ -377,8 +405,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     // workDir. Used by the dashboard hero action to open in program.repos[0] without
     // calling project:add. Hooks ARE installed at this cwd (see installer.install call
     // below); write-after-ready requires the hook to fire at the same cwd (PLAN.md 3.1).
-    const cwd = explicitCwdArg
-      ? explicitCwdArg
+    const cwd = opts.explicitCwdArg
+      ? opts.explicitCwdArg
       : worktreeName
       ? path.join(workDir, '.claude', 'worktrees', worktreeName)
       : workDir;
@@ -402,7 +430,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
       installer.install(cwd);
     }
 
-    const args: string[] = [...(PERMISSION_FLAGS[state.permissionMode] ?? [])];
+    // M10c: the per-call permission override beats the workspace mode so the
+    // injection spawn can force bypassPermissions regardless of plan mode.
+    const effectiveMode = opts.permissionModeOverrideArg ?? state.permissionMode;
+    const args: string[] = [...(PERMISSION_FLAGS[effectiveMode] ?? [])];
     if (worktreeName) {
       args.push('-w', worktreeName);
       args.push('--append-system-prompt', `IMPORTANT: You are working in a git worktree. Your working directory is "${cwd}". Only read and modify files within this directory. Do NOT access or modify files in the parent repository at "${workDir}".`);
@@ -423,6 +454,55 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
 
     wirePtyToTab(proc, tab, cwd);
     return tab;
+  }
+
+  ipcMain.handle('tab:create', async (_event, projectIdOrWorktree: string | null, worktreeNameOrResumeId?: string | null, resumeSessionIdOrSavedName?: string, savedNameArg?: string, explicitCwdArg?: string, permissionModeOverrideArg?: PermissionMode) => {
+    return createClaudeTab({
+      projectIdOrWorktree,
+      worktreeNameOrResumeId,
+      resumeSessionIdOrSavedName,
+      savedNameArg,
+      explicitCwdArg,
+      permissionModeOverrideArg,
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M10c: claude:injectQuery (renderer -> MAIN, RETURNS the new tab id)
+  // -------------------------------------------------------------------------
+  // The coupled core (PLAN.md 3.1 / M10c). The handler:
+  //   1. creates the tab via the M10b explicitCwd route with a bypassPermissions
+  //      override so a plan-mode workspace cannot wedge the idle gate (step 8);
+  //   2. makes the tab MAIN-active (so the post-turn idle does not toast the
+  //      watched tab, step 4b; the do-not-notify flag is the belt-and-suspenders);
+  //   3. ARMS the QueryInjector pending entry + the mandatory 30s timeout BEFORE
+  //      it resolves (the arm-before-resolve property: a renderer reload after the
+  //      awaited round-trip cannot orphan the query, step 3);
+  //   4. resolves with the new tab id.
+  //
+  // Remote decision: DISABLED remotely. The remote tab:create handler discards the
+  // resolved cwd (web-remote-server.ts:316-323), so a canned query would run
+  // against the wrong tree; this channel is renderer-only and absent from
+  // REMOTE_FORWARDED_CHANNELS. handleMessage has no generic passthrough, so the
+  // channel is unreachable from a remote client (PLAN.md 3.1, 3.5).
+  ipcMain.handle('claude:injectQuery', async (_event, payload: { explicitCwd?: string; query: ClaudeQueryLine; projectId?: string | null }) => {
+    const tab = createClaudeTab({
+      projectIdOrWorktree: payload.projectId ?? null,
+      explicitCwdArg: payload.explicitCwd,
+      // Force bypassPermissions so the --plan bug cannot wedge the idle gate.
+      permissionModeOverrideArg: 'bypassPermissions',
+    });
+
+    // Make the injected tab MAIN-active so the post-turn idle does not fire a
+    // toast for the watched tab (step 4b). The do-not-notify flag the injector
+    // arms is the belt-and-suspenders for the renderer-only-Home divergence.
+    tabManager.setActiveTab(tab.id);
+
+    // Arm BEFORE resolving (arm-before-resolve). The pending entry + 30s timeout
+    // live in MAIN, so a renderer reload after the await cannot orphan the query.
+    deps.queryInjector?.arm(tab.id, payload.query);
+
+    return tab.id;
   });
 
   ipcMain.handle('tab:createWithWorktree', async (_event, projectIdOrName: string, worktreeNameArg?: string) => {
@@ -572,6 +652,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     ptyManager.kill(tabId);
     flowControl.delete(tabId);
     deps.cleanupNamingFlag(tabId);
+    // M10c: clear any pending injection for the closing tab (PLAN.md 3.1 step 6).
+    deps.queryInjector?.clear(tabId);
     if (removeWorktree) {
       const tab = tabManager.getTab(tabId);
       const wtManager = project?.worktreeManager ?? state.worktreeManager;
