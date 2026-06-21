@@ -2,7 +2,7 @@
  * WebSocket bridge that implements the same API shape as window.claudeTerminal
  * (from src/preload.ts) but communicates over WebSocket instead of Electron IPC.
  */
-import type { Tab, RemoteAccessInfo, RemoteTransport, ProjectConfig, WorkspaceConfig } from '../shared/types';
+import type { Tab, RemoteAccessInfo, RemoteConnection, RemoteTransport, ProjectConfig, WorkspaceConfig } from '../shared/types';
 import { resolveWsUrl } from './url';
 
 type PtyDataCallback = (tabId: string, data: string) => void;
@@ -235,6 +235,14 @@ export class WebSocketBridge {
     }
   }
 
+  /** Close the socket. Used by the desktop client on disconnect-to-local. */
+  close(): void {
+    if (this.ws) {
+      try { this.ws.close(); } catch { /* already closing */ }
+      this.ws = null;
+    }
+  }
+
   private send(msg: object): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
@@ -332,7 +340,7 @@ export class WebSocketBridge {
       setDefaultShell: async () => {},
 
       // Hook config (stubs — not available remotely)
-      getHookConfig: async () => ({ hooks: {} }),
+      getHookConfig: async () => ({ hooks: [] }),
       saveHookConfig: async () => {},
       onHookStatus: (_callback: any) => () => {},
 

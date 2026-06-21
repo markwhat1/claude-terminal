@@ -9,8 +9,10 @@ vi.mock('@/components/terminalCache', () => ({ destroyTerminal: vi.fn(), destroy
 
 import RemoteSession from '../../src/renderer/RemoteSession';
 
-function makeFakeBridge() {
-  const api = {
+// Loosely typed fake; the real bridge.api surface is large and a structural
+// stand-in here would only add noise to the test.
+function makeFakeBridge(): any {
+  const api: any = {
     onTabUpdate: () => () => {},
     onTabRemoved: () => () => {},
     onDisconnect: (_cb: () => void) => () => {},
@@ -26,9 +28,6 @@ function makeFakeBridge() {
   return {
     api,
     connect: vi.fn().mockResolvedValue({ tabs: [], activeTabId: null, termSizes: {} }),
-  } as unknown as import('../../src/web-client/ws-bridge').WebSocketBridge & {
-    connect: ReturnType<typeof vi.fn>;
-    api: typeof api & { onDisconnect: (cb: () => void) => () => void };
   };
 }
 
@@ -70,7 +69,7 @@ describe('RemoteSession', () => {
     );
 
     await waitFor(() => expect(container.querySelector('[data-web-tabbar]')).toBeTruthy());
-    disconnectCb?.();
+    (disconnectCb as (() => void) | null)?.();
     expect(await findByText('Disconnected')).toBeTruthy();
   });
 });

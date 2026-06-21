@@ -50,8 +50,9 @@ async function connectWithToken(
   const result = await bridge.connect(token, targetUrl);
   persistToken(token);
   // Swap window.claudeTerminal to the bridge and re-bind PTY listeners before
-  // the connected UI mounts any Terminal.
-  enterRemote(bridge.api);
+  // the connected UI mounts any Terminal. The bridge api is a structural
+  // stand-in for the preload api (stubs loosen a few return types), so cast.
+  enterRemote(bridge.api as unknown as Window['claudeTerminal']);
   onConnected(result.tabs, result.activeTabId, result.termSizes);
 }
 

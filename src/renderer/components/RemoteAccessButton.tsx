@@ -9,9 +9,11 @@ interface RemoteAccessButtonProps {
   remoteInfo: RemoteAccessInfo;
   onActivate: () => void;
   onDeactivate: () => void;
+  /** Host only: rotate the access code (revokes saved client tokens). */
+  onRegenerate?: () => void;
 }
 
-export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivate }: RemoteAccessButtonProps) {
+export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivate, onRegenerate }: RemoteAccessButtonProps) {
   const [open, setOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -184,6 +186,16 @@ export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivat
                   {copiedField === 'token' ? 'Copied!' : 'Copy'}
                 </Button>
               </div>
+            )}
+
+            {onRegenerate && (
+              <Button
+                variant="outline"
+                className="w-full mt-2 text-xs"
+                onClick={() => onRegenerate()}
+              >
+                Regenerate code
+              </Button>
             )}
 
             <Button

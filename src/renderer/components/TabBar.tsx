@@ -5,6 +5,8 @@ import Tab from './Tab';
 import HamburgerMenu from './HamburgerMenu';
 import RemoteAccessButton from './RemoteAccessButton';
 import UpdateButton from './UpdateButton';
+import { Button } from '@/components/ui/button';
+import { Plug } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
@@ -28,6 +30,10 @@ interface TabBarProps {
   remoteInfo: RemoteAccessInfo;
   onActivateRemote: () => void;
   onDeactivateRemote: () => void;
+  /** Desktop only: open the connect-to-remote dialog. */
+  onConnectRemote?: () => void;
+  /** Desktop host only: rotate the remote access code. */
+  onRegenerateRemoteCode?: () => void;
 }
 
 export default function TabBar({
@@ -50,6 +56,8 @@ export default function TabBar({
   remoteInfo,
   onActivateRemote,
   onDeactivateRemote,
+  onConnectRemote,
+  onRegenerateRemoteCode,
 }: TabBarProps) {
   const shellOptions = useShellOptions();
   const dragTabId = useRef<string | null>(null);
@@ -153,10 +161,22 @@ export default function TabBar({
       </DropdownMenu>
       <div className="flex items-center ml-auto [-webkit-app-region:no-drag]">
         <UpdateButton />
+        {onConnectRemote && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            title="Connect to a remote ClaudeTerminal"
+            onClick={onConnectRemote}
+          >
+            <Plug size={16} />
+          </Button>
+        )}
         <RemoteAccessButton
           remoteInfo={remoteInfo}
           onActivate={onActivateRemote}
           onDeactivate={onDeactivateRemote}
+          onRegenerate={onRegenerateRemoteCode}
         />
         <HamburgerMenu onManageWorktrees={onManageWorktrees} onManageHooks={onManageHooks} onOpenSettings={onOpenSettings} />
       </div>
