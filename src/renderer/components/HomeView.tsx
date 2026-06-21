@@ -34,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import type { Tab, ProjectConfig } from '@shared/types';
 import type { ProgramBoardState, DashboardItem, ClosedRecord } from '@shared/program-board-state';
+import type { TodoItem, TodoUpdatePatch } from '@shared/capture';
 import SessionStrip from './SessionStrip';
 import {
   mapCardToItem,
@@ -229,6 +230,18 @@ export interface HomeViewProps {
    * Optional; defaults to 0.
    */
   inboxCount?: number;
+  /**
+   * M15: the todo items from the capture store. Used to drive the triage panel
+   * (one untriaged item at a time) and the @now/@next/@later horizon bands.
+   * Optional for backward compatibility; defaults to [].
+   */
+  todos?: TodoItem[];
+  /**
+   * M15: persist a horizon assign, park, or done mutation. App.tsx wires this
+   * to the todo:update IPC (LOCAL-ONLY). The patch contains only structured
+   * fields; the item text is never modified. Optional for backward compat.
+   */
+  onUpdateTodo?: (id: string, patch: TodoUpdatePatch) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -784,6 +797,139 @@ function CaptureBar({ open, inputRef, onCapture, onClose }: CaptureBarProps) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// M15: triage panel (one item at a time, J.O.T. applied to triage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the next item eligible for triage (horizon:null, doneAt:null, not
+ * currently parked). Only one item is surfaced at a time. The first such item
+ * in insertion order is used (FIFO, consistent with J.O.T.).
+ */
+function nextUntriaged(todos: TodoItem[], now: Date): TodoItem | null {
+  const nowMs = now.getTime();
+  for (const item of todos) {
+    if (item.doneAt !== null) continue;
+    if (item.horizon !== null) continue;
+    if (item.parkedUntil !== null && item.parkedUntil > nowMs) continue;
+    return item;
+  }
+  return null;
+}
+
+interface TriagePanelProps {
+  item: TodoItem;
+  onAssign: (id: string, horizon: 'now' | 'next' | 'later') => void;
+  onPark: (id: string) => void;
+  now: Date;
+}
+
+/**
+ * The triage panel surfaces exactly ONE untriaged item at a time.
+ *
+ * Three horizon buttons (@now, @next, @later) plus a one-tap park/not-now
+ * action. No full inbox list, no red badge. The panel carries no
+ * destructive/bg-red/bg-attention styling (PLAN-PHASE-2-3 line 45).
+ */
+function TriagePanel({ item, onAssign, onPark }: TriagePanelProps) {
+  return (
+    <div
+      className="px-6 pt-3 pb-1"
+      data-testid="home-triage-panel"
+    >
+      <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+        <span
+          className="text-sm text-foreground"
+          data-testid="home-triage-item-text"
+        >
+          {item.text}
+        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="home-triage-assign-now"
+            onClick={() => onAssign(item.id, 'now')}
+          >
+            @now
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="home-triage-assign-next"
+            onClick={() => onAssign(item.id, 'next')}
+          >
+            @next
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="home-triage-assign-later"
+            onClick={() => onAssign(item.id, 'later')}
+          >
+            @later
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            data-testid="home-triage-park"
+            onClick={() => onPark(item.id)}
+          >
+            Not now
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// M15: @next/@later horizon collapse
+// ---------------------------------------------------------------------------
+
+interface HorizonCollapseProps {
+  /** All todos with horizon 'next' or 'later' (open, not parked past now). */
+  items: TodoItem[];
+}
+
+/**
+ * Collapses @next and @later todos behind one "+N more" control.
+ * Never renders three equal columns; always a single control.
+ * The collapsed items are not rendered individually when collapsed.
+ */
+function HorizonCollapse({ items }: HorizonCollapseProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="px-6 pb-2" data-testid="home-horizon-collapse">
+      <button
+        type="button"
+        className="text-xs text-muted-foreground hover:text-foreground"
+        data-testid="home-todo-collapse-control"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {expanded ? `Hide @next/@later (${items.length})` : `+${items.length} more (@next/@later)`}
+      </button>
+      {expanded && (
+        <div className="mt-1 flex flex-col gap-1" data-testid="home-horizon-expanded">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="text-sm text-muted-foreground px-2 py-1"
+              data-testid="home-horizon-expanded-item"
+            >
+              {item.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function HomeView({
   programBoardState,
   loadStatus,
@@ -801,6 +947,8 @@ export default function HomeView({
   onRetry,
   onCapture,
   inboxCount = 0,
+  todos = [],
+  onUpdateTodo,
 }: HomeViewProps) {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -1002,6 +1150,53 @@ export default function HomeView({
     : null;
 
   // -------------------------------------------------------------------------
+  // M15: triage panel derivations
+  //
+  // The triage panel surfaces ONE untriaged item at a time (J.O.T. applied to
+  // triage). "Untriaged" means horizon:null + doneAt:null + not currently
+  // parked (parkedUntil <= now or null). The panel is separate from and never
+  // auto-promoted to the hero (PLAN-PHASE-2-3 line 45).
+  // -------------------------------------------------------------------------
+
+  const triageItem = useMemo(
+    () => nextUntriaged(todos, now),
+    [todos, now],
+  );
+
+  // Park for "this week" from the current time. The spec requires the
+  // parkedUntil is > now; a 7-day window is the first slot in the small
+  // duration set (PLAN-PHASE-2-3 line 65).
+  const PARK_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+  const handleTriageAssign = useCallback(
+    (id: string, horizon: 'now' | 'next' | 'later') => {
+      onUpdateTodo?.(id, { horizon });
+    },
+    [onUpdateTodo],
+  );
+
+  const handleTriagePark = useCallback(
+    (id: string) => {
+      onUpdateTodo?.(id, { parkedUntil: now.getTime() + PARK_DURATION_MS });
+    },
+    [onUpdateTodo, now],
+  );
+
+  // @next/@later collapse: open, non-parked todos with horizon 'next' or 'later'.
+  const collapsedHorizonItems = useMemo(
+    () => {
+      const nowMs = now.getTime();
+      return todos.filter(
+        (t) =>
+          t.doneAt === null &&
+          (t.horizon === 'next' || t.horizon === 'later') &&
+          (t.parkedUntil === null || t.parkedUntil <= nowMs),
+      );
+    },
+    [todos, now],
+  );
+
+  // -------------------------------------------------------------------------
   // State selection (4.3 timeline / 4.5 last-good preference)
   // -------------------------------------------------------------------------
 
@@ -1152,6 +1347,24 @@ export default function HomeView({
         onCapture={onCapture}
         onClose={closeCapture}
       />
+
+      {/* M15: triage panel. One untriaged item at a time; never a full inbox
+          list. The panel appears when there is an untriaged item and an
+          onUpdateTodo handler is wired in. No red badge, no bg-attention. */}
+      {triageItem && onUpdateTodo && (
+        <TriagePanel
+          item={triageItem}
+          onAssign={handleTriageAssign}
+          onPark={handleTriagePark}
+          now={now}
+        />
+      )}
+
+      {/* M15: @next/@later collapse. One "+N more" control, never three equal
+          columns (PLAN-PHASE-2-3 line 45). */}
+      {collapsedHorizonItems.length > 0 && (
+        <HorizonCollapse items={collapsedHorizonItems} />
+      )}
 
       {body}
       {/* The subordinate strip lives below the board content (6.4). */}

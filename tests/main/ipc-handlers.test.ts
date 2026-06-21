@@ -208,6 +208,7 @@ describe('registerIpcHandlers', () => {
       'claude:injectQuery',
       'capture:append',
       'capture:count',
+      'todo:update',
     ];
     for (const channel of expectedHandlers) {
       expect(handlers.has(channel), `missing handler: ${channel}`).toBe(true);

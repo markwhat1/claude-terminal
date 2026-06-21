@@ -224,6 +224,14 @@ The channel-name constants `CLAUDE_INJECT_QUERY_CHANNEL` and `CLAUDE_INJECT_STAT
 | `capture:append` | remote-enabled | `handleMessage` case runs `appendTodo` server-side validation; reply `capture:appended` |
 | `capture:count` | local-only | `handleMessage` has no case; the Inbox glance is desktop-only |
 
+### Todo mutation (M15)
+
+| Channel | Direction | Pattern | Renderer Signature | Payload |
+|---|---|---|---|---|
+| `todo:update` | renderer -> main | invoke | `updateTodo(id, patch)` | `{ id: string, patch: TodoUpdatePatch }` -> `{ ok: boolean }` |
+
+`todo:update` is the M15 mutation channel for horizon assign, park, and done. The patch carries only structured fields (`horizon`, `category`, `project`, `parkedUntil`, `doneAt`); the item text is never modified. The main handler calls `updateTodo` (which validates the id, finds the item, applies the patch, and atomic-writes the store). The channel is **local-only** (Home is desktop-only, PLAN.md 2.9); the `ws-bridge` stub throws so a missed disabled-state fails loudly. The channel constant `TODO_UPDATE_CHANNEL` lives in `src/shared/capture.ts`. Not in `REMOTE_FORWARDED_CHANNELS`.
+
 ### Git
 
 | Channel | Direction | Pattern | Renderer Signature | Payload |

@@ -14,6 +14,7 @@ import type { Tab, RemoteAccessInfo, HookExecutionStatus, ProjectConfig, Workspa
 import type { ShellOption } from '../../../src/shared/platform';
 import type { InjectStatus } from '../../../src/shared/injection';
 import type { ClaudeQueryLine } from '../../../src/shared/home-copy';
+import type { TodoUpdatePatch } from '../../../src/shared/capture';
 
 const noop = (): void => undefined;
 const noopCleanup = (): (() => void) => () => undefined;
@@ -174,6 +175,10 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   appendCapture: (_text: string): Promise<{ ok: boolean; count: number | null }> =>
     Promise.resolve({ ok: true, count: 1 }),
   getCaptureCount: (): Promise<number> => Promise.resolve(0),
+
+  // todo:update (M15, local-only)
+  updateTodo: (_id: string, _patch: TodoUpdatePatch): Promise<{ ok: boolean }> =>
+    Promise.resolve({ ok: true }),
 
   // Window title
   setWindowTitle: (_title: string): void => noop(),

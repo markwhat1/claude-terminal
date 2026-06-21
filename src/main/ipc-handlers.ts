@@ -18,8 +18,9 @@ import type { SettingsStore } from './settings-store';
 import type { WorkspaceStore } from './workspace-store';
 import { log } from './logger';
 import { appendHomeOpen } from './home-opens-log';
-import { appendTodo, countOpenTodos } from './todo-store';
-import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL } from '@shared/capture';
+import { appendTodo, countOpenTodos, updateTodo } from './todo-store';
+import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL, TODO_UPDATE_CHANNEL } from '@shared/capture';
+import type { TodoUpdatePatch } from '@shared/capture';
 
 export interface AppState {
   // New: multi-project workspace support
@@ -985,6 +986,22 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
   ipcMain.handle(CAPTURE_COUNT_CHANNEL, async () => {
     if (!deps.captureDir) return 0;
     return countOpenTodos(deps.captureDir);
+  });
+
+  // todo:update is the M15 mutation channel (horizon assign, park, done).
+  // LOCAL-ONLY: Home is desktop-only (PLAN.md 2.9). The ws-bridge stub throws
+  // so a missed disabled-state fails loudly. The patch carries only structured
+  // fields (horizon/category/project/parkedUntil/doneAt); the item text is
+  // never modified here (PLAN.md 1.7 / 3.3). No remote decision: this channel
+  // is not added to REMOTE_FORWARDED_CHANNELS.
+  ipcMain.handle(TODO_UPDATE_CHANNEL, async (_event, payload: { id: unknown; patch: TodoUpdatePatch }) => {
+    if (!deps.captureDir) return { ok: false, reason: 'write-failed' };
+    const result = updateTodo(deps.captureDir, payload?.id, payload?.patch ?? {});
+    if (!result.ok) {
+      log.warn('[todo:update] rejected: %s', result.reason);
+      return { ok: false, reason: result.reason };
+    }
+    return { ok: true };
   });
 
   // Return cleanup function and wirePtyToTab for external use

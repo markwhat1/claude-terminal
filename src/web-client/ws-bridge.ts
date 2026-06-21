@@ -344,6 +344,13 @@ export class WebSocketBridge {
       appendCapture: async (_text: string): Promise<{ ok: boolean; count: number | null }> => ({ ok: false, count: null }),
       getCaptureCount: async (): Promise<number> => 0,
 
+      // M15 stub. todo:update is LOCAL-ONLY (Home is desktop-only, PLAN.md 2.9).
+      // Throws so a missed disabled-state fails loudly, matching the injectQuery
+      // pattern.
+      updateTodo: async (_id: string, _patch: unknown): Promise<{ ok: boolean }> => {
+        throw new Error('updateTodo is not available over remote');
+      },
+
       // Hook config (stubs — not available remotely)
       getHookConfig: async () => ({ hooks: {} }),
       saveHookConfig: async () => {},

@@ -34,6 +34,30 @@ export const CAPTURE_APPEND_CHANNEL = 'capture:append';
  */
 export const CAPTURE_COUNT_CHANNEL = 'capture:count';
 
+/**
+ * Mutate an existing todo item (M15: horizon assign, park, done).
+ * Request/response (ipcMain.handle); LOCAL-ONLY (Home is desktop-only,
+ * PLAN.md 2.9). The ws-bridge stub throws so a missed disabled-state fails
+ * loudly.
+ */
+export const TODO_UPDATE_CHANNEL = 'todo:update';
+
+// ---------------------------------------------------------------------------
+// M15: mutation patch type
+// ---------------------------------------------------------------------------
+
+/**
+ * A partial patch for an existing TodoItem. Only the keys present in the
+ * patch are written; other fields are unchanged. Every key is optional.
+ */
+export interface TodoUpdatePatch {
+  horizon?: TodoHorizon | null;
+  category?: TodoItem['category'];
+  project?: string | null;
+  parkedUntil?: number | null;
+  doneAt?: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // Validation bounds (PLAN-PHASE-2-3.md line 55)
 // ---------------------------------------------------------------------------

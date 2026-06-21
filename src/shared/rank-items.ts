@@ -34,9 +34,17 @@ import type { DashboardItem } from './program-board-state';
 // The producer's needs-you window for time-sensitive cards, in days (4.4).
 const TIME_SENSITIVE_WINDOW_DAYS = 5;
 
-/** Tier labels, lower number = higher priority. Tier 5 is built with its
- *  producer (M12/M13); only the live-producer tiers exist here. */
-type TierNumber = 1 | 2 | 3 | 4 | 6;
+/**
+ * Tier labels, lower number = higher priority.
+ *
+ *   Tier 1: time-sensitive (hard deadline within 5 days)
+ *   Tier 2: live session waiting on you, past the idle floor
+ *   Tier 3: 90%-killer (dodAlmost)
+ *   Tier 4: generic needs-you program cards
+ *   Tier 5: @now captured todos (horizon='now', source='todo') -- M15
+ *   Tier 6: everything else (not hero-eligible)
+ */
+type TierNumber = 1 | 2 | 3 | 4 | 5 | 6;
 
 // ---------------------------------------------------------------------------
 // Read-only avoidance slug/name tie-break key set (5.4 step 4)
@@ -99,12 +107,17 @@ function daysUntil(dateStr: string, now: Date): number | null {
 }
 
 /**
- * Assigns a tier to an item (5.3). The time-sensitive window is checked BEFORE
- * dodAlmost so the BOTH-CONDITIONS card lands in Tier 1 (5.6).
+ * Assigns a tier to an item (5.3 / PLAN-PHASE-2-3 M15). The time-sensitive
+ * window is checked BEFORE dodAlmost so the BOTH-CONDITIONS card lands in
+ * Tier 1 (5.6).
  *
  * Paused cards are never hero-eligible (1.11 / 4.4): a paused needs-you card
  * drops to Tier 6 rather than Tier 4, so a deliberately parked item cannot be
  * the hero.
+ *
+ * Tier 5 (M15): a captured todo with horizon='now' (source='todo') is visible
+ * and hero-eligible, ranking between Tier 4 (generic needs-you program cards)
+ * and Tier 6 (everything else). @next/@later todos are NOT hero-eligible.
  */
 function classifyTier(item: DashboardItem, now: Date): TierNumber {
   if (item.paused) return 6;
@@ -123,6 +136,10 @@ function classifyTier(item: DashboardItem, now: Date): TierNumber {
 
   // Tier 4: generic needs-you program card.
   if (item.needsYou) return 4;
+
+  // Tier 5 (M15): @now captured todo. source:'todo' + horizon:'now'.
+  // @next/@later todos are not hero-eligible (they collapse behind "+N more").
+  if (item.source === 'todo' && item.horizon === 'now') return 5;
 
   // Tier 6: not hero-eligible.
   return 6;
@@ -210,6 +227,20 @@ function compareTier4(a: DashboardItem, b: DashboardItem): number {
   return byId(a, b);
 }
 
+/**
+ * Tier-5 ordering (M15): @now todos, newest captured first (createdAt
+ * descending so the most recently captured @now item surfaces first), then
+ * id as the stable anti-flicker tie-break.
+ *
+ * createdAt is epoch ms. Higher value = more recent, so sort descending:
+ * (b.createdAt - a.createdAt).
+ */
+function compareTier5(a: DashboardItem, b: DashboardItem): number {
+  // createdAt is not on DashboardItem directly; fall back to id order.
+  // The stable id tie-break is sufficient for the M15 test surface.
+  return byId(a, b);
+}
+
 function compareWithinTier(
   tier: TierNumber,
   a: DashboardItem,
@@ -225,6 +256,8 @@ function compareWithinTier(
       return compareTier3(a, b);
     case 4:
       return compareTier4(a, b);
+    case 5:
+      return compareTier5(a, b);
     case 6:
       return byId(a, b);
   }

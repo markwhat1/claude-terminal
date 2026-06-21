@@ -31,6 +31,7 @@ import {
   TODOS_SCHEMA_VERSION,
   type TodoItem,
   type TodosFile,
+  type TodoUpdatePatch,
 } from '@shared/capture';
 import { log } from './logger';
 
@@ -38,6 +39,11 @@ import { log } from './logger';
 export type AppendTodoResult =
   | { ok: true; item: TodoItem; count: number }
   | { ok: false; reason: 'not-string' | 'empty' | 'too-long' | 'control-bytes' | 'at-capacity' | 'write-failed' };
+
+/** The update result. */
+export type UpdateTodoResult =
+  | { ok: true; item: TodoItem }
+  | { ok: false; reason: 'invalid-id' | 'not-found' | 'write-failed' };
 
 /** Resolves the todos.json path under the userData dashboard dir. */
 export function resolveTodosPath(userDataDir: string): string {
@@ -138,6 +144,52 @@ export function appendTodo(
   }
 
   return { ok: true, item, count: next.items.filter((i) => i.doneAt === null).length };
+}
+
+/**
+ * Applies a partial patch to an existing todo item.
+ *
+ * Runs id validation first (typeof string), then looks up the item. Only the
+ * keys present in the patch are written; all other fields are preserved. The
+ * write is atomic. Returns the updated item on success or a machine reason on
+ * rejection.
+ *
+ * LOCAL-ONLY channel (todo:update). No free-text in the patch; only the
+ * horizon/category/project/parkedUntil/doneAt fields may be updated. The raw
+ * text of the item is NEVER modified here.
+ */
+export function updateTodo(
+  userDataDir: string,
+  id: unknown,
+  patch: TodoUpdatePatch,
+): UpdateTodoResult {
+  if (typeof id !== 'string') {
+    return { ok: false, reason: 'invalid-id' };
+  }
+
+  const file = readTodosFile(userDataDir);
+  const idx = file.items.findIndex((i) => i.id === id);
+  if (idx === -1) {
+    return { ok: false, reason: 'not-found' };
+  }
+
+  const updated: TodoItem = { ...file.items[idx] };
+  if ('horizon' in patch) updated.horizon = patch.horizon ?? null;
+  if ('category' in patch) updated.category = patch.category ?? null;
+  if ('project' in patch) updated.project = patch.project ?? null;
+  if ('parkedUntil' in patch) updated.parkedUntil = patch.parkedUntil ?? null;
+  if ('doneAt' in patch) updated.doneAt = patch.doneAt ?? null;
+
+  const next: TodosFile = {
+    version: TODOS_SCHEMA_VERSION,
+    items: [...file.items.slice(0, idx), updated, ...file.items.slice(idx + 1)],
+  };
+
+  if (!atomicWrite(resolveTodosPath(userDataDir), JSON.stringify(next))) {
+    return { ok: false, reason: 'write-failed' };
+  }
+
+  return { ok: true, item: updated };
 }
 
 /**

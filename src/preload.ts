@@ -8,7 +8,8 @@ import {
   type InjectStatus,
 } from './shared/injection';
 import type { ClaudeQueryLine } from './shared/home-copy';
-import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL } from './shared/capture';
+import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL, TODO_UPDATE_CHANNEL } from './shared/capture';
+import type { TodoUpdatePatch } from './shared/capture';
 
 const api = {
   // Platform info
@@ -296,6 +297,13 @@ const api = {
     ipcRenderer.invoke(CAPTURE_APPEND_CHANNEL, { text }),
   getCaptureCount: (): Promise<number> =>
     ipcRenderer.invoke(CAPTURE_COUNT_CHANNEL),
+
+  // todo:update (M15): horizon assign, park, or done. LOCAL-ONLY (Home is
+  // desktop-only, PLAN.md 2.9). The patch carries structured fields only;
+  // the item text is never modified. The ws-bridge stub throws (not a no-op)
+  // so a missed disabled-state fails loudly.
+  updateTodo: (id: string, patch: TodoUpdatePatch): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(TODO_UPDATE_CHANNEL, { id, patch }),
 };
 
 contextBridge.exposeInMainWorld('claudeTerminal', api);
