@@ -720,6 +720,10 @@ export default function App() {
     const cleanupRemote = window.claudeTerminal.onRemoteAccessUpdate((info) => {
       setRemoteInfo(info);
     });
+    // Reflect remote access that is already active when this view mounts (e.g. the
+    // host auto-started on launch), since that broadcast can fire before the
+    // listener above is registered.
+    window.claudeTerminal.getRemoteAccessInfo().then(setRemoteInfo).catch(() => {});
 
     // M14b: apply resolveStartupActiveId so that a main-process tab:switched
     // event cannot override a home landing when startupView is 'home'.

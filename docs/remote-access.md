@@ -173,6 +173,8 @@ The QR code encodes only the tunnel URL. The access code must be entered manuall
 
 **Error handling**: If either the HTTP server or tunnel fails to start, both are stopped and the status is set to `error` with the error message.
 
+**Auto-activate on launch (host)**: A successful `activateRemoteAccess()` sets the per-machine `remoteAutoStart` setting to `true`; `deactivateRemoteAccess()` clears it. On the next launch, the `app.on('ready')` handler reads `settings.getRemoteAutoStart()` and, when true, calls `activateRemoteAccess()` automatically after the window is created. Activation reuses the persisted access code (`getOrCreateRemoteAccessToken()`), so the code is stable across restarts and a remembered client can auto-reconnect without anyone clicking Activate. The flag is stored in the host's `claude-terminal-settings.json`, so it never travels to a client machine; a pure client (never activated) stays at `remoteAutoStart: false` and does not serve. Auto-activate failures are logged, not fatal, and never block startup.
+
 ## Web Client
 
 The web client (`src/web-client/`) is a standalone React app that reuses the Electron renderer's components (`TabBar`, `Terminal`, `StatusBar`) but replaces Electron IPC with a `WebSocketBridge`.

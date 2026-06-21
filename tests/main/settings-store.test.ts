@@ -308,6 +308,21 @@ describe('SettingsStore', () => {
     await store.clearRemoteConnection();
     expect(store.getRemoteConnection()).toBeNull();
   });
+
+  it('defaults remoteAutoStart to false', () => {
+    expect(store.getRemoteAutoStart()).toBe(false);
+  });
+
+  it('saves, reloads, and clears remoteAutoStart', async () => {
+    await store.setRemoteAutoStart(true);
+    expect(store.getRemoteAutoStart()).toBe(true);
+
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getRemoteAutoStart()).toBe(true);
+
+    await store.setRemoteAutoStart(false);
+    expect(store.getRemoteAutoStart()).toBe(false);
+  });
 });
 
 describe('SettingsStore sessions', () => {
