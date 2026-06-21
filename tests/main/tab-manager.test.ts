@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { TabManager } from '@main/tab-manager';
 
 describe('TabManager', () => {
@@ -142,6 +142,129 @@ describe('TabManager', () => {
 
       manager.removeTabsByProject('proj-1');
       expect(manager.getActiveTabId()).toBe(tab2.id);
+    });
+  });
+
+  // M1: additive timing fields + transition-guarded updateStatus
+  describe('M1 timing fields', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('new tab has all four timing fields defaulting to null', () => {
+      const tab = manager.createTab('/dev/proj', null);
+      expect(tab.statusSince).toBeNull();
+      expect(tab.lastActivityAt).toBeNull();
+      expect(tab.firstActivityAt).toBeNull();
+      expect(tab.waitingSince).toBeNull();
+    });
+
+    it('status change updates statusSince', () => {
+      const t0 = 1000;
+      vi.spyOn(Date, 'now').mockReturnValue(t0);
+      const tab = manager.createTab('/dev/proj', null);
+      manager.updateStatus(tab.id, 'working');
+      expect(manager.getTab(tab.id)!.statusSince).toBe(t0);
+    });
+
+    it('two consecutive idle calls leave statusSince unchanged on the second', () => {
+      const t0 = 2000;
+      const t1 = 3000;
+      // First call: new -> idle (status changes)
+      vi.spyOn(Date, 'now').mockReturnValue(t0);
+      const tab = manager.createTab('/dev/proj', null);
+      manager.updateStatus(tab.id, 'idle');
+      expect(manager.getTab(tab.id)!.statusSince).toBe(t0);
+
+      // Second call: idle -> idle (same status, no change)
+      vi.spyOn(Date, 'now').mockReturnValue(t1);
+      manager.updateStatus(tab.id, 'idle');
+      expect(manager.getTab(tab.id)!.statusSince).toBe(t0);
+    });
+
+    it('firstActivityAt stamps once on first working and never again', () => {
+      const t0 = 4000;
+      const t1 = 5000;
+      vi.spyOn(Date, 'now').mockReturnValue(t0);
+      const tab = manager.createTab('/dev/proj', null);
+      manager.updateStatus(tab.id, 'working');
+      expect(manager.getTab(tab.id)!.firstActivityAt).toBe(t0);
+
+      // Second working entry must not overwrite firstActivityAt
+      manager.updateStatus(tab.id, 'idle');
+      vi.spyOn(Date, 'now').mockReturnValue(t1);
+      manager.updateStatus(tab.id, 'working');
+      expect(manager.getTab(tab.id)!.firstActivityAt).toBe(t0);
+    });
+
+    it('tab first seen as idle keeps firstActivityAt null until it next enters working', () => {
+      vi.spyOn(Date, 'now').mockReturnValue(9000);
+      const tab = manager.createTab('/dev/proj', null);
+      manager.updateStatus(tab.id, 'idle');
+      // Still null: idle before any working means the tab has not started a turn yet
+      expect(manager.getTab(tab.id)!.firstActivityAt).toBeNull();
+
+      // Now it enters working for the first time
+      vi.spyOn(Date, 'now').mockReturnValue(10000);
+      manager.updateStatus(tab.id, 'working');
+      expect(manager.getTab(tab.id)!.firstActivityAt).toBe(10000);
+    });
+
+    it('waitingSince is set when entering a human-waiting status', () => {
+      const t0 = 6000;
+      vi.spyOn(Date, 'now').mockReturnValue(t0);
+      const tab = manager.createTab('/dev/proj', null);
+      // Prime firstActivityAt so the idle branch qualifies
+      manager.updateStatus(tab.id, 'working');
+      const t1 = 7000;
+      vi.spyOn(Date, 'now').mockReturnValue(t1);
+      manager.updateStatus(tab.id, 'idle');
+      expect(manager.getTab(tab.id)!.waitingSince).toBe(t1);
+    });
+
+    it('waitingSince is not reset by an idle -> requires_response transition within a waiting span', () => {
+      const t0 = 8000;
+      vi.spyOn(Date, 'now').mockReturnValue(t0);
+      const tab = manager.createTab('/dev/proj', null);
+      manager.updateStatus(tab.id, 'working');
+
+      const t1 = 9000;
+      vi.spyOn(Date, 'now').mockReturnValue(t1);
+      manager.updateStatus(tab.id, 'idle');
+      expect(manager.getTab(tab.id)!.waitingSince).toBe(t1);
+
+      // The overlay transition must not reset the span-start anchor
+      const t2 = 10000;
+      vi.spyOn(Date, 'now').mockReturnValue(t2);
+      manager.updateStatus(tab.id, 'requires_response');
+      expect(manager.getTab(tab.id)!.waitingSince).toBe(t1);
+    });
+
+    it('waitingSince clears to null on working (new turn started)', () => {
+      const t0 = 11000;
+      vi.spyOn(Date, 'now').mockReturnValue(t0);
+      const tab = manager.createTab('/dev/proj', null);
+      manager.updateStatus(tab.id, 'working');
+      manager.updateStatus(tab.id, 'idle');
+      expect(manager.getTab(tab.id)!.waitingSince).not.toBeNull();
+
+      vi.spyOn(Date, 'now').mockReturnValue(12000);
+      manager.updateStatus(tab.id, 'working');
+      expect(manager.getTab(tab.id)!.waitingSince).toBeNull();
+    });
+
+    it('lastActivityAt updates on every updateStatus call', () => {
+      const t0 = 13000;
+      const t1 = 14000;
+      vi.spyOn(Date, 'now').mockReturnValue(t0);
+      const tab = manager.createTab('/dev/proj', null);
+      manager.updateStatus(tab.id, 'working');
+      expect(manager.getTab(tab.id)!.lastActivityAt).toBe(t0);
+
+      vi.spyOn(Date, 'now').mockReturnValue(t1);
+      // Same status: lastActivityAt still updates
+      manager.updateStatus(tab.id, 'working');
+      expect(manager.getTab(tab.id)!.lastActivityAt).toBe(t1);
     });
   });
 });

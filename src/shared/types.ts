@@ -18,6 +18,15 @@ export interface Tab {
   pid: number | null;
   sessionId: string | null;
   projectId: string;
+  /** Epoch ms when the current status was last entered. Null until the first updateStatus call. */
+  statusSince: number | null;
+  /** Epoch ms of the most recent updateStatus call, regardless of whether the status changed. */
+  lastActivityAt: number | null;
+  /** Epoch ms when this tab first entered 'working'. Null for tabs that have never started a turn. */
+  firstActivityAt: number | null;
+  /** Epoch ms when the human-waiting span began. Set on the first human-waiting status after activity;
+   *  not reset by an idle -> requires_response overlay within the same span. Cleared when 'working' resumes. */
+  waitingSince: number | null;
 }
 
 export interface SavedTab {

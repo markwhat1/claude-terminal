@@ -19,7 +19,7 @@ export class TabManager {
     }
     const name = savedName ?? defaultName;
     const status: TabStatus = type === 'claude' ? 'new' : 'shell';
-    const tab: Tab = { id, type, name, defaultName, status, worktree, sourceBranch, cwd, shellType: shellType ?? null, pid: null, sessionId: null, projectId };
+    const tab: Tab = { id, type, name, defaultName, status, worktree, sourceBranch, cwd, shellType: shellType ?? null, pid: null, sessionId: null, projectId, statusSince: null, lastActivityAt: null, firstActivityAt: null, waitingSince: null };
     this.tabs.set(id, tab);
     if (!this.activeTabId) {
       this.activeTabId = id;
@@ -54,7 +54,17 @@ export class TabManager {
 
   updateStatus(id: string, status: TabStatus): void {
     const tab = this.tabs.get(id);
-    if (tab) tab.status = status;
+    if (!tab) return;
+    const now = Date.now();
+    if (tab.status !== status) tab.statusSince = now;
+    if (status === 'working') {
+      if (tab.firstActivityAt === null) tab.firstActivityAt = now;
+      tab.waitingSince = null; // new turn: human no longer waiting
+    } else if ((status === 'idle' && tab.firstActivityAt !== null) || status === 'requires_response') {
+      if (tab.waitingSince === null) tab.waitingSince = now; // span start, not reset by overlay
+    }
+    tab.lastActivityAt = now;
+    tab.status = status;
   }
 
   rename(id: string, name: string): void {

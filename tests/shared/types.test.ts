@@ -15,15 +15,57 @@ describe('shared types', () => {
       defaultName: 'Tab 1',
       status: 'new',
       worktree: null,
+      sourceBranch: null,
       cwd: '/some/path',
       shellType: null,
       pid: null,
       sessionId: null,
       projectId: 'proj-1',
+      statusSince: null,
+      lastActivityAt: null,
+      firstActivityAt: null,
+      waitingSince: null,
     };
     expect(tab.id).toBe('tab-1');
     expect(tab.worktree).toBeNull();
     expect(tab.projectId).toBe('proj-1');
+    // M1: four timing fields present and typed as number | null
+    expect(tab.statusSince).toBeNull();
+    expect(tab.lastActivityAt).toBeNull();
+    expect(tab.firstActivityAt).toBeNull();
+    expect(tab.waitingSince).toBeNull();
+  });
+
+  // M1: type-compile check -- Tab used as Tab[] (mirrors web-client/main.tsx usage)
+  // and no 'closed' field exists on Tab (the render check)
+  it('M1 type-compile: Tab[] array assignment compiles and has no closed field', () => {
+    const tabs: Tab[] = [
+      {
+        id: 'tab-1',
+        type: 'claude',
+        name: 'Test',
+        defaultName: 'Test',
+        status: 'idle',
+        worktree: null,
+        sourceBranch: null,
+        cwd: '/test',
+        shellType: null,
+        pid: null,
+        sessionId: null,
+        projectId: 'p1',
+        statusSince: 1000,
+        lastActivityAt: 2000,
+        firstActivityAt: 500,
+        waitingSince: 1000,
+      },
+    ];
+    // Verify the shape is correct at runtime
+    expect(tabs[0].statusSince).toBe(1000);
+    expect(tabs[0].lastActivityAt).toBe(2000);
+    expect(tabs[0].firstActivityAt).toBe(500);
+    expect(tabs[0].waitingSince).toBe(1000);
+    // No 'closed' field on Tab (the no-closed-field render check)
+    expect('closed' in tabs[0]).toBe(false);
   });
 
   it('IpcMessage has required structure', () => {
