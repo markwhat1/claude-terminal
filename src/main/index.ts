@@ -465,6 +465,9 @@ app.on('ready', async () => {
     onStateUpdated: (boardState) => {
       sendToRenderer(PROGRAM_BOARD_STATE_CHANNEL, boardState);
     },
+    // The done-lane resolved set persists to userData/dashboard/closed.json,
+    // NEVER the workspace git tree (1.5 / 3.6).
+    userDataDir: app.getPath('userData'),
   });
   (state as any).programBoardReader = programBoardReader;
   log.info('[program-board] reader started, polling', stateFilePath);

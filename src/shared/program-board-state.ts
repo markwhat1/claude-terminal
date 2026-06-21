@@ -85,6 +85,31 @@ export const NOT_RUNNING_STATE: ProgramBoardState = {
 };
 
 // ---------------------------------------------------------------------------
+// Done-lane resolved-set record (M4b, 1.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry in the rolling last-24h done-lane resolved set, persisted to
+ * app.getPath('userData')/dashboard/closed.json.
+ *
+ * Fields:
+ *   - id:               the DashboardItem id of the closed card ("pb:<slug>").
+ *   - closedAt:         ISO timestamp of when the close was detected.
+ *   - decidedAndWorked: true for the louder Phase-1 tier (a needs-your-decision
+ *                       tag clearing with a fresh commit within ~1 day, the
+ *                       dominant real close on the live board, 1.5).
+ *   - avoidanceClose:   the Phase-2 avoidance-category overlay. RESERVED-NULL in
+ *                       Phase 1; M4b NEVER sets it, only M13 does (zero
+ *                       forward-coupling, the YAGNI rule).
+ */
+export interface ClosedRecord {
+  id: string;
+  closedAt: string;
+  decidedAndWorked: boolean;
+  avoidanceClose: null;
+}
+
+// ---------------------------------------------------------------------------
 // DashboardItem (unified item shape, 4.1)
 // ---------------------------------------------------------------------------
 
