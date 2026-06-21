@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PermissionMode, Tab, RemoteAccessInfo, HookExecutionStatus, ProjectConfig } from '../shared/types';
-import { PROJECT_COLORS } from '../shared/types';
+import { PROJECT_COLORS, HOME_TAB_ID } from '../shared/types';
+import { applyTabUpdate } from './appender';
 import type { ShellOption } from '../shared/platform';
 import { getAllShellOptions } from '../shared/platform';
 import { ShellContext } from './shell-context';
@@ -27,6 +28,11 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('startup');
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  // Synthetic Home slot: kept OUT of the `tabs` array so every tabs-derived
+  // count (activeProjectTabs, tabCounts, the render map) is automatically
+  // Home-free. The id is the imported HOME_TAB_ID sentinel; it never enters
+  // TabManager or crosses IPC.
+  const homeTabId = HOME_TAB_ID;
   const [showWorktreeDialog, setShowWorktreeDialog] = useState(false);
   const [showWorktreeManager, setShowWorktreeManager] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
@@ -352,15 +358,10 @@ export default function App() {
   // Listen for tab updates from main process (registered once)
   useEffect(() => {
     const cleanupUpdate = window.claudeTerminal.onTabUpdate((tab) => {
-      setTabs((prev) => {
-        const idx = prev.findIndex((t) => t.id === tab.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = tab;
-          return next;
-        }
-        return [...prev, tab];
-      });
+      // applyTabUpdate is a pure (prev, tab) -> Tab[] function. It never
+      // produces a new activeTabId, so Home focus is never stolen by an
+      // incoming tab:updated event.
+      setTabs((prev) => applyTabUpdate(prev, tab));
     });
 
     const cleanupRemoved = window.claudeTerminal.onTabRemoved((tabId) => {

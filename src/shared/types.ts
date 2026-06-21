@@ -1,6 +1,9 @@
 export type TabStatus = 'new' | 'working' | 'idle' | 'requires_response' | 'shell';
 
-export type TabType = 'claude' | 'shell';
+export type TabType = 'claude' | 'shell' | 'home';
+
+/** Sentinel id for the synthetic Home view. Never enters TabManager or IPC. */
+export const HOME_TAB_ID = '__home__' as const;
 
 export type PermissionMode = 'default' | 'plan' | 'acceptEdits' | 'bypassPermissions';
 
