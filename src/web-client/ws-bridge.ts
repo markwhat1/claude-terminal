@@ -333,6 +333,15 @@ export class WebSocketBridge {
       getNotifyOnIdle: async (): Promise<boolean> => false,
       setNotifyOnIdle: async (_value: boolean): Promise<void> => {},
 
+      // M12 stubs. capture:append is remote-enabled in the desktop preload, but
+      // the capture store lives in MAIN on the host machine, so a web client has
+      // nothing to write to. appendCapture no-ops with the API result shape
+      // (ok:false, count:null); getCaptureCount returns 0 so the quiet Inbox(N)
+      // glance reads empty rather than crashing. HomeView is desktop-only in
+      // Phase 2; these guard the Phase-3 optional remote-Home milestone.
+      appendCapture: async (_text: string): Promise<{ ok: boolean; count: number | null }> => ({ ok: false, count: null }),
+      getCaptureCount: async (): Promise<number> => 0,
+
       // Hook config (stubs — not available remotely)
       getHookConfig: async () => ({ hooks: {} }),
       saveHookConfig: async () => {},
