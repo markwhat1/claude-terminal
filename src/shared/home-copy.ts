@@ -16,7 +16,7 @@
  */
 
 import type { DashboardItem } from './program-board-state';
-import { heroOverrideCandidates, goalGradientText } from './program-board-state';
+import { heroOverrideCandidates, goalGradientText, isSafeProgramIdentifier } from './program-board-state';
 
 // ---------------------------------------------------------------------------
 // Branded inert string for the clipboard sink (3.3)
@@ -100,14 +100,28 @@ export interface ComposeClaudeQueryArgs {
 /**
  * Composes a canned query body with ZERO free-text interpolation (3.4).
  *
- * The only interpolated value is the program NAME for draftFirstVersion, which
- * is a producer-computed dev identifier guarded by isSafeProgramIdentifier
- * upstream. detail/blocked_on/dod.gaps NEVER reach this body.
+ * For draftFirstVersion, the deliverable slot is filled from the program NAME
+ * when isSafeProgramIdentifier(programName) passes, then from programSlug as a
+ * fallback, then from a generic placeholder when both fail. detail/blocked_on/
+ * dod.gaps NEVER reach this body regardless of the guard outcome.
+ *
+ * All other actions are entirely canned: no interpolation of any field.
  */
 export function composeClaudeQuery(args: ComposeClaudeQueryArgs): ClaudeQueryLine {
   switch (args.action) {
-    case 'draftFirstVersion':
-      return `Draft the first version of ${args.programName} so I can review and send it.` as ClaudeQueryLine;
+    case 'draftFirstVersion': {
+      // Guard applied before slug/name reach the template (3.4).
+      // Falls back to slug-only, then to a no-identifier placeholder.
+      let deliverable: string;
+      if (isSafeProgramIdentifier(args.programName)) {
+        deliverable = args.programName;
+      } else if (isSafeProgramIdentifier(args.programSlug)) {
+        deliverable = args.programSlug;
+      } else {
+        deliverable = 'this program';
+      }
+      return `Draft the first version of ${deliverable} so I can review and send it.` as ClaudeQueryLine;
+    }
     case 'openToDecide':
       return `Open this repo so I can make the pending decision.` as ClaudeQueryLine;
     case 'reviewTodos':
