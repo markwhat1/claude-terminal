@@ -3,7 +3,7 @@ import { exec, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { PermissionMode, RemoteAccessInfo, RemoteTransport, RepoHookConfig, Tab, ProjectConfig } from '@shared/types';
+import type { PermissionMode, RemoteAccessInfo, RemoteConnection, RemoteTransport, RepoHookConfig, Tab, ProjectConfig } from '@shared/types';
 import { getAllShellOptions, type ShellOption } from '@shared/platform';
 import { PERMISSION_FLAGS } from '@shared/types';
 import { WorktreeManager } from './worktree-manager';
@@ -699,6 +699,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
 
   ipcMain.handle('settings:setRemoteTransport', async (_event, transport: RemoteTransport) => {
     await settings.setRemoteTransport(transport);
+  });
+
+  ipcMain.handle('settings:getRemoteConnection', async () => {
+    return settings.getRemoteConnection();
+  });
+
+  ipcMain.handle('settings:setRemoteConnection', async (_event, conn: RemoteConnection) => {
+    await settings.setRemoteConnection(conn);
+  });
+
+  ipcMain.handle('settings:clearRemoteConnection', async () => {
+    await settings.clearRemoteConnection();
   });
 
   // ---- Hook Config ----

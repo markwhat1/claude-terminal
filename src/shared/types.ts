@@ -96,6 +96,13 @@ export interface RemoteAccessInfo {
   transport?: RemoteTransport;
 }
 
+/** A remembered remote host the desktop client can auto-reconnect to. */
+export interface RemoteConnection {
+  url: string;
+  token: string;
+  autoConnect: boolean;
+}
+
 // --- Repository hooks ---
 
 export const HOOK_EVENTS = [

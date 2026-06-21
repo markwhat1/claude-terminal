@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { PermissionMode, Tab, SavedTab, RemoteAccessInfo, RemoteTransport, RepoHookConfig, HookExecutionStatus, ProjectConfig, WorkspaceConfig } from './shared/types';
+import type { PermissionMode, Tab, SavedTab, RemoteAccessInfo, RemoteConnection, RemoteTransport, RepoHookConfig, HookExecutionStatus, ProjectConfig, WorkspaceConfig } from './shared/types';
 import type { ShellOption } from './shared/platform';
 
 const api = {
@@ -135,6 +135,12 @@ const api = {
     ipcRenderer.invoke('settings:getRemoteTransport'),
   setRemoteTransport: (transport: RemoteTransport): Promise<void> =>
     ipcRenderer.invoke('settings:setRemoteTransport', transport),
+  getRemoteConnection: (): Promise<RemoteConnection | null> =>
+    ipcRenderer.invoke('settings:getRemoteConnection'),
+  setRemoteConnection: (conn: RemoteConnection): Promise<void> =>
+    ipcRenderer.invoke('settings:setRemoteConnection', conn),
+  clearRemoteConnection: (): Promise<void> =>
+    ipcRenderer.invoke('settings:clearRemoteConnection'),
 
   // Update notification
   getUpdateInfo: (): Promise<{ version: string; url: string } | null> =>

@@ -108,6 +108,21 @@ describe('SettingsStore', () => {
     expect(t2).not.toBe(t1);
     expect(await store.getOrCreateRemoteAccessToken()).toBe(t2);
   });
+
+  it('remembers a remote connection with the token encrypted at rest, and clears it', async () => {
+    expect(store.getRemoteConnection()).toBeNull();
+    await store.setRemoteConnection({ url: 'https://h.ts.net', token: 'ABC234', autoConnect: true });
+    expect(store.getRemoteConnection()).toEqual({ url: 'https://h.ts.net', token: 'ABC234', autoConnect: true });
+
+    const raw = fs.readFileSync(tmpFile, 'utf-8');
+    expect(raw).not.toContain('ABC234');
+
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getRemoteConnection()?.token).toBe('ABC234');
+
+    await store.clearRemoteConnection();
+    expect(store.getRemoteConnection()).toBeNull();
+  });
 });
 
 describe('SettingsStore sessions', () => {

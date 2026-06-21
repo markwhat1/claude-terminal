@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { app } from 'electron';
-import { PermissionMode, RemoteTransport, SavedTab } from '@shared/types';
+import { PermissionMode, RemoteConnection, RemoteTransport, SavedTab } from '@shared/types';
 import { genToken } from '@shared/token';
 import { encryptField, decryptField } from './secure-store';
 import { log } from './logger';
@@ -18,6 +18,8 @@ interface StoreData {
   remoteTransport: RemoteTransport;
   /** Encrypted-at-rest host access token (enc:/plain: tagged). */
   remoteAccessToken: string | null;
+  /** Remembered remote host for the client (its token field is encrypted at rest). */
+  remoteConnection: RemoteConnection | null;
 }
 
 const DEFAULTS: StoreData = {
@@ -26,6 +28,7 @@ const DEFAULTS: StoreData = {
   defaultShell: null,
   remoteTransport: 'tailscale',
   remoteAccessToken: null,
+  remoteConnection: null,
 };
 
 export class SettingsStore {
@@ -118,6 +121,29 @@ export class SettingsStore {
     this.data.remoteAccessToken = encryptField(token);
     await this.save();
     return token;
+  }
+
+  /** The remembered remote connection, with its token decrypted (null if none). */
+  getRemoteConnection(): RemoteConnection | null {
+    const c = this.data.remoteConnection;
+    if (!c) return null;
+    return { url: c.url, token: decryptField(c.token), autoConnect: c.autoConnect };
+  }
+
+  /** Persist the remembered remote connection, encrypting the token at rest. */
+  async setRemoteConnection(conn: RemoteConnection): Promise<void> {
+    this.data.remoteConnection = {
+      url: conn.url,
+      token: encryptField(conn.token),
+      autoConnect: conn.autoConnect,
+    };
+    await this.save();
+  }
+
+  /** Forget the remembered remote connection entirely. */
+  async clearRemoteConnection(): Promise<void> {
+    this.data.remoteConnection = null;
+    await this.save();
   }
 
   // --- Per-directory session persistence (stored in <dir>/.claude-terminal/sessions.json) ---

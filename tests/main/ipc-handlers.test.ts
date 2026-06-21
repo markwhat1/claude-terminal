@@ -135,6 +135,9 @@ function makeMockDeps(): IpcHandlerDeps {
       saveSessions: vi.fn(),
       getRemoteTransport: vi.fn(() => 'tailscale'),
       setRemoteTransport: vi.fn(),
+      getRemoteConnection: vi.fn(() => null),
+      setRemoteConnection: vi.fn(),
+      clearRemoteConnection: vi.fn(),
     } as unknown as SettingsStore,
     workspaceStore: {
       listWorkspaces: vi.fn(async () => []),
@@ -193,6 +196,7 @@ describe('registerIpcHandlers', () => {
       'hookConfig:load', 'hookConfig:save',
       'settings:recentDirs', 'settings:removeRecentDir', 'settings:permissionMode', 'settings:getDefaultShell', 'settings:setDefaultShell',
       'settings:getRemoteTransport', 'settings:setRemoteTransport',
+      'settings:getRemoteConnection', 'settings:setRemoteConnection', 'settings:clearRemoteConnection',
       'dialog:selectDirectory', 'cli:getStartDir',
       'remote:activate', 'remote:deactivate', 'remote:getInfo', 'remote:regenerateCode',
       'instance:getHue',
@@ -312,6 +316,21 @@ describe('registerIpcHandlers', () => {
     await handler({});
 
     expect(deps.regenerateRemoteCode).toHaveBeenCalled();
+  });
+
+  it('settings:setRemoteConnection persists the connection', async () => {
+    const handler = handlers.get('settings:setRemoteConnection')!;
+    const conn = { url: 'https://h.ts.net', token: 'ABC234', autoConnect: true };
+    await handler({}, conn);
+
+    expect(deps.settings.setRemoteConnection).toHaveBeenCalledWith(conn);
+  });
+
+  it('settings:clearRemoteConnection delegates to settings', async () => {
+    const handler = handlers.get('settings:clearRemoteConnection')!;
+    await handler({});
+
+    expect(deps.settings.clearRemoteConnection).toHaveBeenCalled();
   });
 
   it('registers pty:pause and pty:resume listeners', () => {

@@ -367,6 +367,10 @@ export class WebSocketBridge {
       // Transport is a host-local setting — the remote client can't change it.
       getRemoteTransport: async (): Promise<RemoteTransport> => 'cloudflare',
       setRemoteTransport: async (): Promise<void> => {},
+      // The remembered connection is a client-local concept; no-op remotely.
+      getRemoteConnection: async (): Promise<RemoteConnection | null> => null,
+      setRemoteConnection: async (): Promise<void> => {},
+      clearRemoteConnection: async (): Promise<void> => {},
 
       // Open external URLs (browser can just use window.open)
       openExternal: (url: string): void => {
