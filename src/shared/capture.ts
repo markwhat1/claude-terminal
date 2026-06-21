@@ -42,6 +42,17 @@ export const CAPTURE_COUNT_CHANNEL = 'capture:count';
  */
 export const TODO_UPDATE_CHANNEL = 'todo:update';
 
+/**
+ * List the captured todo items so the renderer can render the Phase-3 triage /
+ * parking / morning-ritual surfaces (M15/M18) and feed Tier-5 @now todos to the
+ * ranker. Request/response (ipcMain.handle); LOCAL-ONLY (Home is desktop-only,
+ * PLAN.md 2.9), so this channel is NOT in REMOTE_FORWARDED_CHANNELS and the
+ * ws-bridge stub returns an empty list. The returned items carry only the
+ * structured TodoItem fields; the raw text is DISPLAY-ONLY and never an action
+ * payload (PLAN.md 1.7 / 3.3), and the list is never logged.
+ */
+export const TODO_LIST_CHANNEL = 'capture:list';
+
 // ---------------------------------------------------------------------------
 // M15: mutation patch type
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ import type { ProgramBoardState, ProgramBoardBroadcast, ClosedRecord } from '../
 import { resolvePreferredPowershell } from '../shared/dashboard-ui-helpers';
 import { resolveStartupActiveId } from '../shared/startup-view';
 import type { ClaudeQueryLine } from '../shared/home-copy';
+import type { TodoItem, TodoUpdatePatch } from '../shared/capture';
 import { destroyTerminal } from './components/terminalCache';
 import StatusBar from './components/StatusBar';
 import ProjectSidebar from './components/ProjectSidebar';
@@ -105,6 +106,16 @@ export default function App() {
   // M12: the quiet Inbox(N) glance number (the open-todo count). App owns the
   // capture:count read; HomeView renders it as a calm muted number.
   const [inboxCount, setInboxCount] = useState(0);
+  // Phase-3 wiring: App owns the captured todo list (capture:list) and the three
+  // coaching flags, then passes them to the pure HomeView. The flags ship
+  // DEFAULT-OFF (PLAN-PHASE-2-3); a getter that fails leaves them off.
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [stallInterrupt, setStallInterrupt] = useState(false);
+  const [commitmentMirror, setCommitmentMirror] = useState(false);
+  const [morningRitual, setMorningRitual] = useState(false);
+  // M18: the ids of todos completed THIS session, so HomeView can render the
+  // motion-safe settle for each. Session-only; never persisted.
+  const [recentTodoCloses, setRecentTodoCloses] = useState<string[]>([]);
   // The resolved path is surfaced in the not-running and error states; the
   // reader returns it inside the state, but Phase 0 keeps a stable label.
   const PROGRAM_BOARD_PATH = 'C:\\Users\\Mark\\Claude-Code\\dashboard\\state.json';
@@ -168,8 +179,33 @@ export default function App() {
     refreshInboxCount();
   }, [refreshInboxCount]);
 
-  // M12: persist one captured todo, then refresh the glance count. The text is
-  // the inert capture payload; the server-side validation lives in MAIN.
+  // Phase-3 wiring: read the captured todo list so HomeView can render the
+  // triage / parking / morning-ritual surfaces and feed Tier-5 @now todos to
+  // the ranker. A failed read leaves the prior list; never throws.
+  const refreshTodos = useCallback(async () => {
+    try {
+      const list = await window.claudeTerminal.listTodos();
+      setTodos(list);
+    } catch {
+      // Leave the prior list on a failed read.
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshTodos();
+  }, [refreshTodos]);
+
+  // Phase-3 wiring: seed the three coaching flags from their store getters. They
+  // are DEFAULT-OFF (PLAN-PHASE-2-3); a getter that rejects leaves them off.
+  useEffect(() => {
+    window.claudeTerminal.getStallInterrupt().then(setStallInterrupt).catch(() => {});
+    window.claudeTerminal.getCommitmentMirror().then(setCommitmentMirror).catch(() => {});
+    window.claudeTerminal.getMorningRitual().then(setMorningRitual).catch(() => {});
+  }, []);
+
+  // M12: persist one captured todo, then refresh the glance count + the list.
+  // The text is the inert capture payload; the server-side validation lives in
+  // MAIN.
   const handleCapture = useCallback(async (text: string) => {
     try {
       await window.claudeTerminal.appendCapture(text);
@@ -177,7 +213,39 @@ export default function App() {
       // A failed append is surfaced only by the count not moving; never throws.
     }
     await refreshInboxCount();
-  }, [refreshInboxCount]);
+    await refreshTodos();
+  }, [refreshInboxCount, refreshTodos]);
+
+  // M15/M18: mutate one todo (triage horizon, park, or done), then refresh the
+  // list + count so the surfaces re-render. A doneAt patch records the id in
+  // recentTodoCloses so HomeView renders the motion-safe settle this session.
+  const handleUpdateTodo = useCallback(async (id: string, patch: TodoUpdatePatch) => {
+    try {
+      await window.claudeTerminal.updateTodo(id, patch);
+    } catch {
+      // A failed mutation is surfaced only by the list not moving; never throws.
+    }
+    if ('doneAt' in patch && patch.doneAt != null) {
+      setRecentTodoCloses((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    }
+    await refreshTodos();
+    await refreshInboxCount();
+  }, [refreshTodos, refreshInboxCount]);
+
+  // Phase-3 wiring: the coaching-flag setters. Each persists to the store, then
+  // updates the local reactive copy so SettingsDialog and HomeView re-render.
+  const handleStallInterruptChange = useCallback(async (value: boolean) => {
+    setStallInterrupt(value);
+    await window.claudeTerminal.setStallInterrupt(value);
+  }, []);
+  const handleCommitmentMirrorChange = useCallback(async (value: boolean) => {
+    setCommitmentMirror(value);
+    await window.claudeTerminal.setCommitmentMirror(value);
+  }, []);
+  const handleMorningRitualChange = useCallback(async (value: boolean) => {
+    setMorningRitual(value);
+    await window.claudeTerminal.setMorningRitual(value);
+  }, []);
 
   const handleOpenPowerShellInRepo = useCallback(async (repo: string | null) => {
     // Resolve the preferred PowerShell from the installed shells (pwsh else 5.1).
@@ -804,6 +872,12 @@ export default function App() {
               onRetry={loadProgramBoard}
               onCapture={handleCapture}
               inboxCount={inboxCount}
+              todos={todos}
+              onUpdateTodo={handleUpdateTodo}
+              stallInterrupt={stallInterrupt}
+              commitmentMirror={commitmentMirror}
+              morningRitual={morningRitual}
+              recentTodoCloses={recentTodoCloses}
             />
           )}
         </div>
@@ -857,6 +931,12 @@ export default function App() {
         onDefaultShellChange={handleDefaultShellChange}
         startupView={startupViewSetting}
         onStartupViewChange={handleStartupViewChange}
+        stallInterrupt={stallInterrupt}
+        onStallInterruptChange={handleStallInterruptChange}
+        commitmentMirror={commitmentMirror}
+        onCommitmentMirrorChange={handleCommitmentMirrorChange}
+        morningRitual={morningRitual}
+        onMorningRitualChange={handleMorningRitualChange}
       />
       {showProjectSwitcher && (
         <ProjectSwitcherDialog

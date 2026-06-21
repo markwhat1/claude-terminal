@@ -363,6 +363,12 @@ export class WebSocketBridge {
         throw new Error('updateTodo is not available over remote');
       },
 
+      // capture:list stub. LOCAL-ONLY (Home is desktop-only, PLAN.md 2.9): the
+      // capture store lives in MAIN on the host machine, so a web client has no
+      // list to read. Returns [] so a Phase-3 remote-Home surface renders empty
+      // rather than crashing, matching the getCaptureCount-returns-0 stub.
+      listTodos: async (): Promise<unknown[]> => [],
+
       // Hook config (stubs — not available remotely)
       getHookConfig: async () => ({ hooks: {} }),
       saveHookConfig: async () => {},

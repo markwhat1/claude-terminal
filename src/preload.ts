@@ -8,8 +8,8 @@ import {
   type InjectStatus,
 } from './shared/injection';
 import type { ClaudeQueryLine } from './shared/home-copy';
-import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL, TODO_UPDATE_CHANNEL } from './shared/capture';
-import type { TodoUpdatePatch } from './shared/capture';
+import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL, TODO_UPDATE_CHANNEL, TODO_LIST_CHANNEL } from './shared/capture';
+import type { TodoUpdatePatch, TodoItem } from './shared/capture';
 
 const api = {
   // Platform info
@@ -324,6 +324,13 @@ const api = {
   // so a missed disabled-state fails loudly.
   updateTodo: (id: string, patch: TodoUpdatePatch): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(TODO_UPDATE_CHANNEL, { id, patch }),
+
+  // capture:list (Phase-3 wiring): the captured todo items, so HomeView can
+  // render the triage / parking / morning-ritual surfaces and feed Tier-5 @now
+  // todos to the ranker. LOCAL-ONLY (Home is desktop-only, PLAN.md 2.9). The
+  // returned items are structured DISPLAY-ONLY data, never action payloads.
+  listTodos: (): Promise<TodoItem[]> =>
+    ipcRenderer.invoke(TODO_LIST_CHANNEL),
 };
 
 contextBridge.exposeInMainWorld('claudeTerminal', api);

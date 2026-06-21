@@ -18,8 +18,8 @@ import type { SettingsStore } from './settings-store';
 import type { WorkspaceStore } from './workspace-store';
 import { log } from './logger';
 import { appendHomeOpen } from './home-opens-log';
-import { appendTodo, countOpenTodos, updateTodo } from './todo-store';
-import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL, TODO_UPDATE_CHANNEL } from '@shared/capture';
+import { appendTodo, countOpenTodos, updateTodo, readTodosFile } from './todo-store';
+import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL, TODO_UPDATE_CHANNEL, TODO_LIST_CHANNEL } from '@shared/capture';
 import type { TodoUpdatePatch } from '@shared/capture';
 
 export interface AppState {
@@ -1041,6 +1041,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
       return { ok: false, reason: result.reason };
     }
     return { ok: true };
+  });
+
+  // capture:list returns the stored todo items so the renderer can render the
+  // Phase-3 triage / parking / morning-ritual surfaces and feed Tier-5 @now
+  // todos to the ranker. LOCAL-ONLY (Home is desktop-only, PLAN.md 2.9): not in
+  // REMOTE_FORWARDED_CHANNELS, the ws-bridge stub returns []. The items carry
+  // only structured TodoItem fields; the text is DISPLAY-ONLY and never logged
+  // (the read degrades to an empty array on a corrupt store, per readTodosFile).
+  ipcMain.handle(TODO_LIST_CHANNEL, async () => {
+    if (!deps.captureDir) return [];
+    return readTodosFile(deps.captureDir).items;
   });
 
   // Return cleanup function and wirePtyToTab for external use

@@ -9,6 +9,15 @@ interface SettingsDialogProps {
   onDefaultShellChange: (shellId: string) => void;
   startupView: 'lastSession' | 'home';
   onStartupViewChange: (view: 'lastSession' | 'home') => void;
+  // Phase-3 coaching flags, all default OFF (PLAN-PHASE-2-3 lines 76-78). They
+  // are optional so older callers (and tests) keep working; an unset flag reads
+  // as off and its toggle stays unchecked.
+  stallInterrupt?: boolean;
+  onStallInterruptChange?: (value: boolean) => void;
+  commitmentMirror?: boolean;
+  onCommitmentMirrorChange?: (value: boolean) => void;
+  morningRitual?: boolean;
+  onMorningRitualChange?: (value: boolean) => void;
 }
 
 export default function SettingsDialog({
@@ -18,6 +27,12 @@ export default function SettingsDialog({
   onDefaultShellChange,
   startupView,
   onStartupViewChange,
+  stallInterrupt = false,
+  onStallInterruptChange,
+  commitmentMirror = false,
+  onCommitmentMirrorChange,
+  morningRitual = false,
+  onMorningRitualChange,
 }: SettingsDialogProps) {
   const shellOptions = useShellOptions();
 
@@ -66,6 +81,51 @@ export default function SettingsDialog({
               <option value="lastSession">Last session</option>
               <option value="home">Home</option>
             </select>
+          </div>
+
+          {/* Phase-3 coaching toggles. All default OFF (PLAN-PHASE-2-3). The
+              copy is plain and calm: it states what the feature does, with no
+              guilt, no streak framing, and no time-since language. */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Gentle nudge when a task sits</div>
+              <div className="text-xs text-muted-foreground">A soft pulse on the focused task. No relayout.</div>
+            </div>
+            <input
+              type="checkbox"
+              data-testid="stall-interrupt-toggle"
+              className="h-4 w-4 rounded border-input"
+              checked={stallInterrupt}
+              onChange={(e) => onStallInterruptChange?.(e.target.checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Name the one thing on open</div>
+              <div className="text-xs text-muted-foreground">Pick one focus when Home opens. Skip anytime.</div>
+            </div>
+            <input
+              type="checkbox"
+              data-testid="commitment-mirror-toggle"
+              className="h-4 w-4 rounded border-input"
+              checked={commitmentMirror}
+              onChange={(e) => onCommitmentMirrorChange?.(e.target.checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Morning review on first open</div>
+              <div className="text-xs text-muted-foreground">Bring parked items back and retriage them.</div>
+            </div>
+            <input
+              type="checkbox"
+              data-testid="morning-ritual-toggle"
+              className="h-4 w-4 rounded border-input"
+              checked={morningRitual}
+              onChange={(e) => onMorningRitualChange?.(e.target.checked)}
+            />
           </div>
         </div>
       </DialogContent>

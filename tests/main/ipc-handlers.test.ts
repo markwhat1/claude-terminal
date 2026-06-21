@@ -208,6 +208,7 @@ describe('registerIpcHandlers', () => {
       'claude:injectQuery',
       'capture:append',
       'capture:count',
+      'capture:list',
       'todo:update',
     ];
     for (const channel of expectedHandlers) {
@@ -801,6 +802,26 @@ describe('registerIpcHandlers', () => {
       expect(appendResult).toEqual({ ok: false, count: null });
       const count = await handlers.get('capture:count')!({});
       expect(count).toBe(0);
+    });
+
+    it('capture:list returns the stored items so the renderer can triage them', async () => {
+      const append = handlers.get('capture:append')!;
+      await append({}, { text: 'call the lab about the crown' });
+      await append({}, { text: 'review the lab slip' });
+      const items = (await handlers.get('capture:list')!({})) as Array<{ text: string }>;
+      expect(items.map((i) => i.text)).toEqual([
+        'call the lab about the crown',
+        'review the lab slip',
+      ]);
+    });
+
+    it('capture:list returns an empty array when captureDir is not set', async () => {
+      handlers.clear();
+      const depsNoDir = makeMockDeps();
+      // captureDir intentionally omitted.
+      registerIpcHandlers(depsNoDir);
+      const items = await handlers.get('capture:list')!({});
+      expect(items).toEqual([]);
     });
   });
 });
