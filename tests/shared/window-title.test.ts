@@ -8,11 +8,16 @@ const makeTab = (status: Tab['status']): Tab => ({
   defaultName: 'Tab',
   status,
   worktree: null,
+  sourceBranch: null,
   cwd: '/test',
   shellType: null,
   pid: null,
   sessionId: null,
   projectId: '',
+  statusSince: null,
+  lastActivityAt: null,
+  firstActivityAt: null,
+  waitingSince: null,
 });
 
 describe('buildWindowTitle', () => {

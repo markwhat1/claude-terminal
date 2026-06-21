@@ -64,8 +64,8 @@ function findAction(mod: string | undefined, key: string) {
 function makeHardenedCtx(
   activeTabIdValue: string | null,
   tabList: Tab[],
-  closeTabSpy: ReturnType<typeof vi.fn>,
-  newDefaultShellTabSpy: ReturnType<typeof vi.fn>,
+  closeTabSpy: (...args: unknown[]) => void,
+  newDefaultShellTabSpy: (...args: unknown[]) => void,
 ): KeybindingContext {
   const homeTabId = HOME_TAB_ID;
 

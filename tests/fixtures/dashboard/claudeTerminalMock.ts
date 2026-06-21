@@ -53,6 +53,10 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
       pid: null,
       sessionId: null,
       projectId: 'proj-mock',
+      statusSince: null,
+      lastActivityAt: null,
+      firstActivityAt: null,
+      waitingSince: null,
     }),
   createTabWithWorktree: (_projectId: string, _worktreeName: string): Promise<Tab> =>
     Promise.resolve({
@@ -68,6 +72,10 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
       pid: null,
       sessionId: null,
       projectId: 'proj-mock',
+      statusSince: null,
+      lastActivityAt: null,
+      firstActivityAt: null,
+      waitingSince: null,
     }),
   createShellTab: (
     _shellType: string,
@@ -87,6 +95,10 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
       pid: null,
       sessionId: null,
       projectId: 'proj-mock',
+      statusSince: null,
+      lastActivityAt: null,
+      firstActivityAt: null,
+      waitingSince: null,
     }),
   closeTab: (_tabId: string, _removeWorktree?: boolean): Promise<void> => Promise.resolve(),
   switchTab: (_tabId: string): Promise<void> => Promise.resolve(),
@@ -135,6 +147,11 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
 
   // Hook execution status events (one of the ~8 listener registrations)
   onHookStatus: (_callback: (status: HookExecutionStatus) => void): (() => void) =>
+    noopCleanup(),
+
+  // Program board (M5, local-only channel)
+  getProgramBoardState: (): Promise<unknown> => Promise.resolve(null),
+  onProgramBoardState: (_callback: (state: unknown) => void): (() => void) =>
     noopCleanup(),
 
   // Window title
