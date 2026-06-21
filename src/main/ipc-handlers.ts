@@ -811,6 +811,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     return view;
   });
 
+  // M14c: startup view setter (local-only; not forwarded to remote clients)
+  ipcMain.handle('settings:setStartupView', async (_event, view: 'lastSession' | 'home') => {
+    await settings.setStartupView(view);
+  });
+
   // M14d: idle notification flag (no new broadcast channel; local-only setting)
   ipcMain.handle('settings:getNotifyOnIdle', async () => {
     return settings.getNotifyOnIdle();

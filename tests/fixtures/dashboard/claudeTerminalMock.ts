@@ -141,6 +141,8 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   getDefaultShell: (): Promise<string | null> => Promise.resolve(null),
   setDefaultShell: (_shellId: string | null): Promise<void> => Promise.resolve(),
   getStartupView: (): Promise<'lastSession' | 'home'> => Promise.resolve('lastSession'),
+  // M14c: startup view setter
+  setStartupView: (_view: 'lastSession' | 'home'): Promise<void> => Promise.resolve(),
   // M14d: idle notification flag
   getNotifyOnIdle: (): Promise<boolean> => Promise.resolve(false),
   setNotifyOnIdle: (_value: boolean): Promise<void> => Promise.resolve(),

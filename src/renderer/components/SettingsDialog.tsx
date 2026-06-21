@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useShellOptions } from '../shell-context';
@@ -8,9 +7,18 @@ interface SettingsDialogProps {
   onClose: () => void;
   defaultShell: string | null;
   onDefaultShellChange: (shellId: string) => void;
+  startupView: 'lastSession' | 'home';
+  onStartupViewChange: (view: 'lastSession' | 'home') => void;
 }
 
-export default function SettingsDialog({ open, onClose, defaultShell, onDefaultShellChange }: SettingsDialogProps) {
+export default function SettingsDialog({
+  open,
+  onClose,
+  defaultShell,
+  onDefaultShellChange,
+  startupView,
+  onStartupViewChange,
+}: SettingsDialogProps) {
   const shellOptions = useShellOptions();
 
   // Resolve the effective value: saved preference, or first available shell
@@ -42,6 +50,22 @@ export default function SettingsDialog({ open, onClose, defaultShell, onDefaultS
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* M14c: startup view picker */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">When ClaudeTerminal opens</div>
+            </div>
+            <select
+              data-testid="startup-view-select"
+              className="w-[160px] rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              value={startupView}
+              onChange={(e) => onStartupViewChange(e.target.value as 'lastSession' | 'home')}
+            >
+              <option value="lastSession">Last session</option>
+              <option value="home">Home</option>
+            </select>
           </div>
         </div>
       </DialogContent>

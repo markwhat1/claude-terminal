@@ -94,6 +94,9 @@ const api = {
     ipcRenderer.invoke('settings:setDefaultShell', shellId),
   getStartupView: (): Promise<'lastSession' | 'home'> =>
     ipcRenderer.invoke('settings:getStartupView'),
+  // M14c: startup view setter (local-only; not forwarded to remote clients)
+  setStartupView: (view: 'lastSession' | 'home'): Promise<void> =>
+    ipcRenderer.invoke('settings:setStartupView', view),
   // M14d: idle notification flag (local-only; not forwarded to remote clients)
   getNotifyOnIdle: (): Promise<boolean> =>
     ipcRenderer.invoke('settings:getNotifyOnIdle'),

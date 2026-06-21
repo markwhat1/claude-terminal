@@ -71,6 +71,9 @@ export default function App() {
   const [showHookManager, setShowHookManager] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [defaultShell, setDefaultShell] = useState<string | null>(null);
+  // M14c: reactive copy of startupView for the SettingsDialog picker. The ref
+  // copy (startupViewRef) drives startup tab resolution; this state drives the UI.
+  const [startupViewSetting, setStartupViewSetting] = useState<'lastSession' | 'home'>('lastSession');
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [availableShells, setAvailableShells] = useState<ShellOption[]>(
     () => getAllShellOptions(window.claudeTerminal?.platform ?? 'linux')
@@ -107,6 +110,8 @@ export default function App() {
   useEffect(() => {
     window.claudeTerminal.getAvailableShells().then(setAvailableShells).catch(() => {});
     window.claudeTerminal.getDefaultShell().then(setDefaultShell).catch(() => {});
+    // M14c: seed the UI copy so SettingsDialog shows the persisted value on first open.
+    window.claudeTerminal.getStartupView().then(setStartupViewSetting).catch(() => {});
   }, []);
 
   // Program-board: read once on mount and subscribe to the broadcast. A
@@ -326,6 +331,12 @@ export default function App() {
   const handleDefaultShellChange = useCallback(async (shellId: string) => {
     setDefaultShell(shellId);
     await window.claudeTerminal.setDefaultShell(shellId);
+  }, []);
+
+  // M14c: startup view picker handler. Updates both the UI state and the persisted store.
+  const handleStartupViewChange = useCallback(async (view: 'lastSession' | 'home') => {
+    setStartupViewSetting(view);
+    await window.claudeTerminal.setStartupView(view);
   }, []);
 
   const handleReorderTabs = useCallback((reordered: Tab[]) => {
@@ -807,6 +818,8 @@ export default function App() {
         onClose={() => setShowSettings(false)}
         defaultShell={defaultShell}
         onDefaultShellChange={handleDefaultShellChange}
+        startupView={startupViewSetting}
+        onStartupViewChange={handleStartupViewChange}
       />
       {showProjectSwitcher && (
         <ProjectSwitcherDialog

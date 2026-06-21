@@ -327,6 +327,8 @@ export class WebSocketBridge {
       setDefaultShell: async () => {},
       // M14a stub (local-only: startupView is irrelevant from a web client)
       getStartupView: async (): Promise<'lastSession' | 'home'> => 'lastSession',
+      // M14c stub (local-only: startupView setter is a desktop-only setting)
+      setStartupView: async (_view: 'lastSession' | 'home'): Promise<void> => {},
       // M14d stubs (local-only: notification settings are desktop-only)
       getNotifyOnIdle: async (): Promise<boolean> => false,
       setNotifyOnIdle: async (_value: boolean): Promise<void> => {},
