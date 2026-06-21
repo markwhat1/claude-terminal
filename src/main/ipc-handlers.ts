@@ -836,6 +836,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     await settings.setNotifyOnIdle(value);
   });
 
+  // M16: stall pattern-interrupt flag (local-only; not forwarded to remote clients)
+  ipcMain.handle('settings:getStallInterrupt', async () => {
+    return settings.getStallInterrupt();
+  });
+
+  ipcMain.handle('settings:setStallInterrupt', async (_event, value: boolean) => {
+    await settings.setStallInterrupt(value);
+  });
+
   // ---- Hook Config ----
   ipcMain.handle('hookConfig:load', async (_event, projectId?: string) => {
     const project = projectId ? state.projectManager?.getProject(projectId) : undefined;

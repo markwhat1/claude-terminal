@@ -147,6 +147,9 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   // M14d: idle notification flag
   getNotifyOnIdle: (): Promise<boolean> => Promise.resolve(false),
   setNotifyOnIdle: (_value: boolean): Promise<void> => Promise.resolve(),
+  // M16: stall pattern-interrupt flag
+  getStallInterrupt: (): Promise<boolean> => Promise.resolve(false),
+  setStallInterrupt: (_value: boolean): Promise<void> => Promise.resolve(),
 
   // Hook config
   getHookConfig: (_projectId?: string): Promise<RepoHookConfig> =>

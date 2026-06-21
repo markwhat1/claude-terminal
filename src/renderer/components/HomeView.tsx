@@ -66,6 +66,7 @@ import {
   type ParkedHeroSlot,
 } from '@shared/hero-reroll';
 import { matchKeybinding } from '@/keybindings';
+import { useStallInterrupt } from '@shared/stall-interrupt';
 
 // ---------------------------------------------------------------------------
 // Idle-floor constant (M8b-iii, 5.2)
@@ -242,6 +243,13 @@ export interface HomeViewProps {
    * fields; the item text is never modified. Optional for backward compat.
    */
   onUpdateTodo?: (id: string, patch: TodoUpdatePatch) => void;
+  /**
+   * M16: stall pattern-interrupt. When true, an in-place pulse is applied to
+   * the hero primary button and the periphery is dimmed after STALL_THRESHOLD_MS
+   * of inactivity. Default OFF (false). Mirror of the notifyOnIdle store flag
+   * pattern (PLAN-PHASE-2-3.md line 76, PLAN.md 1.8).
+   */
+  stallInterrupt?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -325,6 +333,12 @@ interface HeroProps {
    * the slot stays empty (e.g. when ranked.length < 2, nothing to surface).
    */
   onReroll?: (() => void) | null;
+  /**
+   * M16: when true, apply the stall-pulse class to the hero primary button.
+   * The class is an opacity/animate-pulse change ONLY; no position or layout
+   * change (in-place only, PLAN-PHASE-2-3.md line 76 / PLAN.md 1.8).
+   */
+  stallActive?: boolean;
 }
 
 /**
@@ -341,7 +355,7 @@ function isClaudePrimaryAction(action: KnownActionId): boolean {
   return action !== 'openPowerShell' && action !== 'copyOnly';
 }
 
-function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, onCopy, onOpenExternal, settleClass, onReroll }: HeroProps) {
+function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, onCopy, onOpenExternal, settleClass, onReroll, stallActive = false }: HeroProps) {
   const action: KnownActionId = pickPrimaryAction(hero);
   const headline = heroHeadline(hero, action);
   const repo = hero.project; // repos[0], the cwd target.
@@ -442,7 +456,11 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, o
           <>
             <Button
               ref={primaryRef}
-              className="bg-attention text-attention-foreground hover:bg-attention/90"
+              className={cn(
+                'bg-attention text-attention-foreground hover:bg-attention/90',
+                // M16: stall-pulse is an opacity/animation class only (in-place).
+                stallActive && 'stall-pulse',
+              )}
               data-testid="home-hero-primary"
               onClick={() => onOpenClaudeWithQuery!(claudeQuery!, repo)}
             >
@@ -480,7 +498,11 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, o
           <>
             <Button
               ref={primaryRef}
-              className="bg-attention text-attention-foreground hover:bg-attention/90"
+              className={cn(
+                'bg-attention text-attention-foreground hover:bg-attention/90',
+                // M16: stall-pulse is an opacity/animation class only (in-place).
+                stallActive && 'stall-pulse',
+              )}
               data-testid="home-hero-primary"
               onClick={() => onOpenPowerShell(repo)}
             >
@@ -949,6 +971,7 @@ export default function HomeView({
   inboxCount = 0,
   todos = [],
   onUpdateTodo,
+  stallInterrupt = false,
 }: HomeViewProps) {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -1197,6 +1220,42 @@ export default function HomeView({
   );
 
   // -------------------------------------------------------------------------
+  // M16: stall pattern-interrupt (default OFF, in-place only).
+  //
+  // The hero settle class is the "pending justResolved" motion source that
+  // defers the stall timer (one motion source at a time). Compute it here,
+  // outside the body IIFE, so the hook can read it at the top level.
+  //
+  // Motion arbitration:
+  //   - settleClass != null  => a settle is in progress; stall timer deferred.
+  //   - user pointerdown/keydown on the Home region => notify() resets the clock.
+  //
+  // The hook is enabled only when stallInterrupt is true (default OFF). When
+  // disabled, it never fires (active is always false).
+  // -------------------------------------------------------------------------
+
+  const heroSettleForStall = hero ? settleClassForId(hero.id) : null;
+
+  const { active: stallActive, notify: stallNotify } = useStallInterrupt({
+    enabled: stallInterrupt,
+    settleClass: heroSettleForStall,
+  });
+
+  // Wire interaction events to the stall notifier so any user action resets
+  // the clock. The Home region container is the target because it is the scope
+  // of the in-place pulse (all interactions within the dashboard count).
+  useEffect(() => {
+    if (!stallInterrupt) return;
+    const onInteract = () => stallNotify();
+    window.addEventListener('pointerdown', onInteract);
+    window.addEventListener('keydown', onInteract);
+    return () => {
+      window.removeEventListener('pointerdown', onInteract);
+      window.removeEventListener('keydown', onInteract);
+    };
+  }, [stallInterrupt, stallNotify]);
+
+  // -------------------------------------------------------------------------
   // State selection (4.3 timeline / 4.5 last-good preference)
   // -------------------------------------------------------------------------
 
@@ -1274,11 +1333,17 @@ export default function HomeView({
     }
 
     // 6. The normal board.
-    const heroSettle = settleClassForId(hero.id);
+    // heroSettle is computed at the top level (heroSettleForStall) for the
+    // stall hook; reuse it here so the settle-class lookup runs only once.
+    const heroSettle = heroSettleForStall;
     return (
       <div className="flex flex-col gap-4 p-6 overflow-y-auto" data-testid="home-board">
-        {/* needs-you header (6.3 fixed priority: count, closed, degraded) */}
-        <div className="flex items-center gap-3 flex-nowrap" data-testid="home-needs-header">
+        {/* needs-you header (6.3 fixed priority: count, closed, degraded).
+            M16: stall-dim applied to periphery when the stall interrupt fires. */}
+        <div
+          className={cn('flex items-center gap-3 flex-nowrap', stallActive && 'stall-dim')}
+          data-testid="home-needs-header"
+        >
           <span className="text-sm text-foreground" data-testid="home-need-count">
             {needsYouLine(needCount, workingCount)}
           </span>
@@ -1311,9 +1376,13 @@ export default function HomeView({
           onOpenExternal={onOpenExternal}
           settleClass={heroSettle}
           onReroll={canReroll ? handleReroll : null}
+          stallActive={stallActive}
         />
 
-        <NeedsYouList rows={needsYouRows} pausedCount={pausedCount} now={now} />
+        {/* M16: stall-dim on the sub-dominant list when the stall fires. */}
+        <div className={cn(stallActive && 'stall-dim')}>
+          <NeedsYouList rows={needsYouRows} pausedCount={pausedCount} now={now} />
+        </div>
       </div>
     );
   })();

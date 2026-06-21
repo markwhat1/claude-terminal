@@ -102,6 +102,29 @@
   to   { opacity: 1; }
 }
 
+/*
+ * M16: stall pattern-interrupt (PLAN-PHASE-2-3.md line 76 / PLAN.md 1.8).
+ *
+ * In-place only: opacity and animation changes only. NO position, transform,
+ * margin, padding, width, or height mutations. The pulse draws the eye to the
+ * hero primary button without moving anything on the page.
+ *
+ * Both classes are gated behind motion-safe in the component via the
+ * prefers-reduced-motion guard; these rules fire only for users who accept motion.
+ */
+.stall-pulse {
+  animation: stall-pulse-anim 1.2s ease-in-out infinite;
+}
+@keyframes stall-pulse-anim {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+.stall-dim {
+  opacity: 0.4;
+  transition: opacity 400ms ease;
+}
+
 @layer base {
   * {
     @apply border-border;

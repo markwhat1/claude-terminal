@@ -104,6 +104,11 @@ const api = {
     ipcRenderer.invoke('settings:getNotifyOnIdle'),
   setNotifyOnIdle: (value: boolean): Promise<void> =>
     ipcRenderer.invoke('settings:setNotifyOnIdle', value),
+  // M16: stall pattern-interrupt flag (local-only; not forwarded to remote clients)
+  getStallInterrupt: (): Promise<boolean> =>
+    ipcRenderer.invoke('settings:getStallInterrupt'),
+  setStallInterrupt: (value: boolean): Promise<void> =>
+    ipcRenderer.invoke('settings:setStallInterrupt', value),
 
   // Hook config
   getHookConfig: (projectId?: string): Promise<RepoHookConfig> =>

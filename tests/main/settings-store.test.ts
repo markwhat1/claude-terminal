@@ -131,6 +131,35 @@ describe('SettingsStore', () => {
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getNotifyOnIdleFirstRunShown()).toBe(true);
   });
+
+  // M16: stallInterrupt flag
+  it('returns false as default stallInterrupt', () => {
+    expect(store.getStallInterrupt()).toBe(false);
+  });
+
+  it('round-trips stallInterrupt true', async () => {
+    await store.setStallInterrupt(true);
+    expect(store.getStallInterrupt()).toBe(true);
+  });
+
+  it('round-trips stallInterrupt false after true', async () => {
+    await store.setStallInterrupt(true);
+    await store.setStallInterrupt(false);
+    expect(store.getStallInterrupt()).toBe(false);
+  });
+
+  it('persists stallInterrupt to disk and reloads', async () => {
+    await store.setStallInterrupt(true);
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getStallInterrupt()).toBe(true);
+  });
+
+  it('tolerates a missing stallInterrupt key via DEFAULTS merge (defaults to false)', async () => {
+    const fs2 = await import('fs/promises');
+    await fs2.writeFile(tmpFile, JSON.stringify({ recentDirs: [], permissionMode: 'bypassPermissions', defaultShell: null }), 'utf-8');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getStallInterrupt()).toBe(false);
+  });
 });
 
 describe('SettingsStore sessions', () => {

@@ -200,7 +200,7 @@ describe('registerIpcHandlers', () => {
       'tab:create', 'tab:createWithWorktree', 'tab:createShell', 'tab:close', 'tab:switch', 'tab:rename', 'tab:getAll', 'tab:getActiveId',
       'worktree:create', 'worktree:currentBranch', 'worktree:listDetails', 'worktree:remove', 'worktree:checkStatus',
       'hookConfig:load', 'hookConfig:save',
-      'settings:recentDirs', 'settings:removeRecentDir', 'settings:permissionMode', 'settings:getDefaultShell', 'settings:setDefaultShell', 'settings:getStartupView', 'settings:setStartupView', 'settings:getNotifyOnIdle', 'settings:setNotifyOnIdle',
+      'settings:recentDirs', 'settings:removeRecentDir', 'settings:permissionMode', 'settings:getDefaultShell', 'settings:setDefaultShell', 'settings:getStartupView', 'settings:setStartupView', 'settings:getNotifyOnIdle', 'settings:setNotifyOnIdle', 'settings:getStallInterrupt', 'settings:setStallInterrupt',
       'dialog:selectDirectory', 'cli:getStartDir',
       'remote:activate', 'remote:deactivate', 'remote:getInfo',
       'instance:getHue',

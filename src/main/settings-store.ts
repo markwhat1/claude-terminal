@@ -18,6 +18,8 @@ interface StoreData {
   notifyOnIdle: boolean;
   /** M14d: tracks whether the one-time first-run note has been shown. */
   notifyOnIdleFirstRunShown: boolean;
+  /** M16: stall pattern-interrupt (in-place pulse, default OFF). */
+  stallInterrupt: boolean;
 }
 
 const DEFAULTS: StoreData = {
@@ -27,6 +29,7 @@ const DEFAULTS: StoreData = {
   startupView: 'lastSession',
   notifyOnIdle: false,
   notifyOnIdleFirstRunShown: false,
+  stallInterrupt: false,
 };
 
 export class SettingsStore {
@@ -114,6 +117,16 @@ export class SettingsStore {
 
   async setNotifyOnIdleFirstRunShown(value: boolean): Promise<void> {
     this.data.notifyOnIdleFirstRunShown = value;
+    await this.save();
+  }
+
+  // M16: stall pattern-interrupt flag
+  getStallInterrupt(): boolean {
+    return this.data.stallInterrupt;
+  }
+
+  async setStallInterrupt(value: boolean): Promise<void> {
+    this.data.stallInterrupt = value;
     await this.save();
   }
 
