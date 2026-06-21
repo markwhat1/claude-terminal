@@ -199,6 +199,8 @@ function getRemoteAccessInfo(): RemoteAccessInfo {
 
 function activateRemoteAccess(): Promise<RemoteAccessInfo> {
   return withRemoteLock(async (): Promise<RemoteAccessInfo> => {
+  // Already active: the auto-start flag was set at first activation, so this
+  // early return intentionally leaves it unchanged.
   if (webRemoteServer) return getRemoteAccessInfo();
 
   activeTransport = settings.getRemoteTransport();
@@ -239,6 +241,8 @@ function activateRemoteAccess(): Promise<RemoteAccessInfo> {
     return { status: 'error', tunnelUrl: null, token: null, error: String(err) };
   }
 
+  // Remember the opt-in so the host auto-serves on the next launch.
+  await settings.setRemoteAutoStart(true);
   return getRemoteAccessInfo();
   });
 }
@@ -250,6 +254,8 @@ function deactivateRemoteAccess(): Promise<void> {
     webRemoteServer = null;
     localRemoteUrl = null;
     activeTransport = 'cloudflare';
+    // Explicit deactivate is also an opt-out: do not auto-serve next launch.
+    await settings.setRemoteAutoStart(false);
   });
 }
 
@@ -419,6 +425,21 @@ app.on('ready', async () => {
   wirePtyToTabFn = ipcResult.wirePtyToTab;
 
   createWindow();
+
+  // Host launch-and-serve: if remote access was active when the app last ran,
+  // bring it back up automatically (reusing the persisted access code) so a
+  // remembered client can auto-reconnect without a manual Activate click.
+  if (settings.getRemoteAutoStart()) {
+    activateRemoteAccess()
+      .then((info) => {
+        if (info.status === 'error') log.error('[remote] auto-start failed:', info.error);
+        else log.info('[remote] auto-started on launch');
+        // Push the result so the renderer reflects it; the window may still be
+        // loading, so App.tsx also queries the current state on mount.
+        sendToRenderer('remote:updated', info);
+      })
+      .catch((err) => log.error('[remote] auto-start threw:', String(err)));
+  }
 });
 
 app.on('window-all-closed', async () => {

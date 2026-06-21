@@ -20,6 +20,8 @@ interface StoreData {
   remoteAccessToken: string | null;
   /** Remembered remote host for the client (its token field is encrypted at rest). */
   remoteConnection: RemoteConnection | null;
+  /** When true, the host auto-activates remote access on app launch (per-machine opt-in). */
+  remoteAutoStart: boolean;
 }
 
 const DEFAULTS: StoreData = {
@@ -29,6 +31,7 @@ const DEFAULTS: StoreData = {
   remoteTransport: 'tailscale',
   remoteAccessToken: null,
   remoteConnection: null,
+  remoteAutoStart: false,
 };
 
 export class SettingsStore {
@@ -96,6 +99,15 @@ export class SettingsStore {
 
   async setRemoteTransport(transport: RemoteTransport): Promise<void> {
     this.data.remoteTransport = transport;
+    await this.save();
+  }
+
+  getRemoteAutoStart(): boolean {
+    return this.data.remoteAutoStart;
+  }
+
+  async setRemoteAutoStart(enabled: boolean): Promise<void> {
+    this.data.remoteAutoStart = enabled;
     await this.save();
   }
 
