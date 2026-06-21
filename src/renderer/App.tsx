@@ -14,6 +14,7 @@ import { InjectionOverlayHost } from './components/InjectionOverlayHost';
 import type { InjectionRetryPayload } from './hooks/useInjectionStatus';
 import type { ProgramBoardState, ProgramBoardBroadcast, ClosedRecord } from '../shared/program-board-state';
 import { resolvePreferredPowershell } from '../shared/dashboard-ui-helpers';
+import { resolveStartupActiveId } from '../shared/startup-view';
 import type { ClaudeQueryLine } from '../shared/home-copy';
 import { destroyTerminal } from './components/terminalCache';
 import StatusBar from './components/StatusBar';
@@ -83,6 +84,11 @@ export default function App() {
   const [worktreeCloseConfirm, setWorktreeCloseConfirm] = useState<{
     tabId: string; worktreeName: string; clean: boolean; changesCount: number;
   } | null>(null);
+
+  // M14b: startupView drives resolveStartupActiveId at all three setActiveTabId
+  // sites. Stored in a ref so the onTabSwitched listener (registered once) can
+  // read the value set by the auto-start useEffect without re-registering.
+  const startupViewRef = useRef<'lastSession' | 'home'>('lastSession');
 
   // Program-board state for the Home dashboard. App owns the IPC read and the
   // subscription; HomeView is pure and receives this as a prop.
@@ -409,8 +415,12 @@ export default function App() {
 
       setWorkspaceDir(cliDir);
 
-      const savedMode = await window.claudeTerminal.getPermissionMode();
+      const [savedMode, startupView] = await Promise.all([
+        window.claudeTerminal.getPermissionMode(),
+        window.claudeTerminal.getStartupView(),
+      ]);
       if (cancelled) return;
+      startupViewRef.current = startupView;
 
       const result = await window.claudeTerminal.startSession(cliDir, savedMode);
       if (cancelled) return;
@@ -420,16 +430,33 @@ export default function App() {
       setProjects([config]);
       setActiveProjectId(projectId);
 
-      // Check if tabs already exist in the main process (renderer reload)
+      // Check if tabs already exist in the main process (renderer reload).
+      // M14b: resolveStartupActiveId maps the active id to HOME_TAB_ID when
+      // startupView is 'home', ensuring this path and the fresh-start path
+      // cannot drift.
       const existingTabs = await window.claudeTerminal.getTabs();
       if (cancelled) return;
 
       if (existingTabs.length > 0) {
-        const activeId = await window.claudeTerminal.getActiveTabId();
+        const rawActiveId = await window.claudeTerminal.getActiveTabId();
         if (cancelled) return;
         setTabs(existingTabs);
-        setActiveTabId(activeId);
+        setActiveTabId(resolveStartupActiveId(startupView, homeTabId, rawActiveId));
         setAppState('running');
+        try {
+          setBranch(await window.claudeTerminal.getCurrentBranch(projectId));
+        } catch { /* not a git repo */ }
+        return;
+      }
+
+      // M14b R-10 Option A: when startupView is 'home', skip restoring saved
+      // terminal tabs. The directory is already resolved above (setWorkspaceDir
+      // + startSession) so hero actions have a cwd. Landing on Home without
+      // re-instantiating whatever was open avoids dropping the user into a
+      // half-finished tree at the calmest, highest-agency moment (morning cue).
+      if (startupView === 'home') {
+        setAppState('running');
+        setActiveTabId(homeTabId);
         try {
           setBranch(await window.claudeTerminal.getCurrentBranch(projectId));
         } catch { /* not a git repo */ }
@@ -448,11 +475,11 @@ export default function App() {
       if (cancelled) return;
 
       const allTabs = await window.claudeTerminal.getTabs();
-      const activeId = await window.claudeTerminal.getActiveTabId();
+      const rawActiveId = await window.claudeTerminal.getActiveTabId();
       if (cancelled) return;
 
       setTabs(allTabs);
-      setActiveTabId(activeId);
+      setActiveTabId(resolveStartupActiveId(startupView, homeTabId, rawActiveId));
       setAppState('running');
 
       try {
@@ -498,8 +525,10 @@ export default function App() {
       setRemoteInfo(info);
     });
 
+    // M14b: apply resolveStartupActiveId so that a main-process tab:switched
+    // event cannot override a home landing when startupView is 'home'.
     const cleanupSwitched = window.claudeTerminal.onTabSwitched((tabId) => {
-      setActiveTabId(tabId);
+      setActiveTabId(resolveStartupActiveId(startupViewRef.current, homeTabId, tabId));
     });
 
     const cleanupBranch = window.claudeTerminal.onBranchChanged((b, projectId) => {

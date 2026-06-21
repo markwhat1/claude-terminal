@@ -92,6 +92,8 @@ const api = {
     ipcRenderer.invoke('settings:getDefaultShell'),
   setDefaultShell: (shellId: string | null): Promise<void> =>
     ipcRenderer.invoke('settings:setDefaultShell', shellId),
+  getStartupView: (): Promise<'lastSession' | 'home'> =>
+    ipcRenderer.invoke('settings:getStartupView'),
 
   // Hook config
   getHookConfig: (projectId?: string): Promise<RepoHookConfig> =>

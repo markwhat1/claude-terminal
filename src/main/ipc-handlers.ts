@@ -789,6 +789,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     await settings.setDefaultShell(shellId);
   });
 
+  ipcMain.handle('settings:getStartupView', async () => {
+    return settings.getStartupView();
+  });
+
   // ---- Hook Config ----
   ipcMain.handle('hookConfig:load', async (_event, projectId?: string) => {
     const project = projectId ? state.projectManager?.getProject(projectId) : undefined;

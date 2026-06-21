@@ -140,6 +140,7 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   getPermissionMode: (): Promise<PermissionMode> => Promise.resolve('default'),
   getDefaultShell: (): Promise<string | null> => Promise.resolve(null),
   setDefaultShell: (_shellId: string | null): Promise<void> => Promise.resolve(),
+  getStartupView: (): Promise<'lastSession' | 'home'> => Promise.resolve('lastSession'),
 
   // Hook config
   getHookConfig: (_projectId?: string): Promise<RepoHookConfig> =>
