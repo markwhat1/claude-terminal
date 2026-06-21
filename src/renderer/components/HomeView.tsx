@@ -110,8 +110,9 @@ function parseNaiveLocalMinutesAgo(generatedAt: string | null, now: Date): numbe
 // Skeleton (4.5: hero block at hero min-height + N row blocks, zero reflow)
 // ---------------------------------------------------------------------------
 
-/** The hero min-height, shared by the skeleton and the live hero so loading-to-
- *  content has zero hero-region layout shift (4.5/1.13). */
+/** The hero min-height, carried by BOTH the skeleton hero and the live HeroCard
+ *  root so loading-to-content has zero hero-region layout shift (4.5/1.13). A
+ *  short hero (one-line title, no badges, url null) still reserves this height. */
 const HERO_MIN_HEIGHT = 'min-h-[180px]';
 
 function HomeSkeleton() {
@@ -168,7 +169,7 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal }
 
   return (
     <Card
-      className={cn('border-l-4 gap-4 py-6', bandClass)}
+      className={cn('border-l-4 gap-4 py-6', HERO_MIN_HEIGHT, bandClass)}
       data-testid="home-hero"
     >
       <CardHeader>

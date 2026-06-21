@@ -251,6 +251,25 @@ describe('dodAlmost parity with fixtures', () => {
 });
 
 // ---------------------------------------------------------------------------
+// feed url mapping (4.1/4.4): absent in today's producer -> null; present -> verbatim
+// ---------------------------------------------------------------------------
+
+describe('feed url mapping', () => {
+  it('maps url to null when the card has no url field (today\'s producer)', () => {
+    const raw = loadFixtureRaw('time-sensitive');
+    const card = parseState(raw)!.programs[0];
+    expect(mapCardToItem(card).url).toBeNull();
+  });
+
+  it('maps a present card url verbatim so the hero can route it through openExternal', () => {
+    const raw = loadFixtureRaw('time-sensitive');
+    const card = parseState(raw)!.programs[0];
+    card.url = 'https://example.com/feed';
+    expect(mapCardToItem(card).url).toBe('https://example.com/feed');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // paused card mapping + exclusion (4.4)
 // ---------------------------------------------------------------------------
 

@@ -76,11 +76,42 @@ describe('M8a: skeleton', () => {
     expect(skelHero.className).toContain('min-h-[180px]');
   });
 
-  it('the live hero card occupies the same min-height footprint', () => {
+  it('the live hero card carries the same min-height token as the skeleton (zero hero-region shift)', () => {
     renderReady('time-sensitive.json');
-    // The Card root and the skeleton share the hero min-height contract.
+    // The Card root and the skeleton share the hero min-height contract, so the
+    // skeleton-to-content transition never shrinks the hero region (4.5/1.13).
     const hero = screen.getByTestId('home-hero');
-    expect(hero).toBeTruthy();
+    expect(hero.className).toContain('min-h-[180px]');
+  });
+
+  it('a short hero with no badges and no url still carries the hero min-height', () => {
+    // The worst case for shift: a one-line title, zero badges, url null. The
+    // live hero must still reserve the full hero footprint.
+    const state: ProgramBoardState = {
+      generated_at: '2026-06-21T01:00:00',
+      programs: [
+        {
+          slug: 'short',
+          name: 'X',
+          repos: ['repo-x'],
+          sources: [],
+          tags: [],
+          time_sensitive: null,
+          blocked_on: '',
+          paused: false,
+          git: { last_commit: null, age_days: 0, uncommitted: false, unmerged_branch: null },
+          dod: { met: 0, total: 0, gaps: [] },
+          last_touched: null,
+          lane: 'blocked',
+          age_color: 'green',
+          needs_you: true,
+          needs_you_reasons: ['needs you'],
+        },
+      ],
+      suggested: [],
+    };
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />);
+    expect(screen.getByTestId('home-hero').className).toContain('min-h-[180px]');
   });
 });
 
@@ -116,6 +147,65 @@ describe('M8a: time-sensitive hero', () => {
     // dodMet>0 so the goal-gradient honest fraction renders.
     const headline = screen.getByTestId('home-hero-headline').textContent ?? '';
     expect(headline).toContain('1 of 2 done');
+  });
+
+  it('TWO-CARD precedence: a separate time-sensitive card beats a dodAlmost card that leads board order (Tier 1 > Tier 3)', () => {
+    // Card A leads board order and is dodAlmost (total:2,met:1, fewest remaining)
+    // but NOT time-sensitive. Card B is second in board order and IS
+    // time_sensitive within the 5-day window. The hero MUST be card B, so a
+    // dodAlmost-first selectHero regression (Tier 3 before Tier 1) fails here.
+    const state: ProgramBoardState = {
+      generated_at: '2026-06-21T01:00:00',
+      programs: [
+        {
+          slug: 'almost-done-leader',
+          name: 'Almost Done Leader',
+          repos: ['repo-a'],
+          sources: ['override'],
+          tags: ['needs-CADDC02'],
+          time_sensitive: null,
+          blocked_on: '',
+          paused: false,
+          git: {
+            last_commit: { sha: 's', iso: '2026-06-20T13:00:00-06:00', msg: 'm', repo: 'repo-a' },
+            age_days: 0,
+            uncommitted: false,
+            unmerged_branch: null,
+          },
+          dod: { met: 1, total: 2, gaps: ['the last step'] },
+          last_touched: '2026-06-20T13:00:00-06:00',
+          lane: 'blocked',
+          age_color: 'green',
+          needs_you: true,
+          needs_you_reasons: ['needs-CADDC02'],
+        },
+        {
+          slug: 'deadline-card',
+          name: 'Deadline Card',
+          repos: ['repo-b'],
+          sources: ['override'],
+          tags: ['time-sensitive'],
+          time_sensitive: '2026-06-23',
+          blocked_on: '',
+          paused: false,
+          git: {
+            last_commit: { sha: 's', iso: '2026-06-20T13:00:00-06:00', msg: 'm', repo: 'repo-b' },
+            age_days: 0,
+            uncommitted: false,
+            unmerged_branch: null,
+          },
+          dod: { met: 0, total: 3, gaps: ['a', 'b', 'c'] },
+          last_touched: '2026-06-20T13:00:00-06:00',
+          lane: 'blocked',
+          age_color: 'green',
+          needs_you: true,
+          needs_you_reasons: ['time-sensitive 2026-06-23'],
+        },
+      ],
+      suggested: [],
+    };
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />);
+    expect(screen.getByTestId('home-hero-title').textContent).toBe('Deadline Card');
   });
 });
 
@@ -466,19 +556,33 @@ describe('M8a: mandatory states', () => {
 // ---------------------------------------------------------------------------
 
 describe('M8a: feed url safety', () => {
-  it('a feed-url link has no navigating href and clicking calls onOpenExternal', () => {
+  it('no element on Home is a navigating anchor href (links route through onClick)', () => {
     const state = loadState('time-sensitive.json');
-    // Mappers leave url null today; inject one to exercise the render path.
-    const onOpenExternal = vi.fn();
     const { container } = render(
-      <HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready', onOpenExternal })} />,
+      <HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />,
     );
-    // The mapper sets url to null, so to test the render we patch the rendered
-    // item. Instead, assert that NO anchor with a navigating href exists.
     const anchors = container.querySelectorAll('a[href]');
     for (const a of anchors) {
       const href = a.getAttribute('href') ?? '';
       expect(href === '' || href === '#').toBe(true);
     }
+  });
+
+  it('a hero with a feed url renders a button (no navigating href) whose click calls onOpenExternal', () => {
+    // The producer schema can carry a feed url; mapCardToItem reads it. When set,
+    // the hero feed link MUST render as a button and route the click through
+    // onOpenExternal, never a bare navigating href (PLAN 3.6, line 488).
+    const state = loadState('time-sensitive.json');
+    state.programs[0].url = 'https://example.com/program-feed';
+    const onOpenExternal = vi.fn();
+    render(
+      <HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready', onOpenExternal })} />,
+    );
+    const link = screen.getByTestId('home-hero-feed-link');
+    // It is a button, not an anchor with a navigating href.
+    expect(link.tagName).toBe('BUTTON');
+    expect(link.getAttribute('href')).toBeNull();
+    fireEvent.click(link);
+    expect(onOpenExternal).toHaveBeenCalledWith('https://example.com/program-feed');
   });
 });

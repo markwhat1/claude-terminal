@@ -63,6 +63,12 @@ export interface ProgramCard {
   needs_you: boolean;
   needs_you_reasons: string[];
   issues?: unknown[];
+  /**
+   * Optional feed url (diag/enrichment, 4.2/4.4). Absent in today's producer
+   * output. When present it is scheme-allowlisted before openExternal (3.6) and
+   * rendered as an onClick button, never a navigating href.
+   */
+  url?: string | null;
 }
 
 export interface ProgramBoardState {
@@ -324,6 +330,7 @@ function cardKind(card: ProgramCard): DashboardItem['kind'] {
  *   - dodGap: dod.gaps[0]
  *   - paused: card.paused verbatim
  *   - detail: blocked_on verbatim (NEVER logged, NEVER fed to composeClaudeQuery)
+ *   - url: card.url verbatim, null when absent (scheme-allowlisted before openExternal, 3.6)
  */
 // ---------------------------------------------------------------------------
 // Goal-gradient text (1.10): never present a goal at a bare zero fraction.
@@ -395,7 +402,7 @@ export function mapCardToItem(card: ProgramCard): DashboardItem {
     ageColor: safeAgeColor(card.age_color),
     recencyIso: card.git?.last_commit?.iso ?? null,
     gitAgeDays: card.git?.age_days ?? null,
-    url: null,
+    url: card.url ?? null,
     needsYou: card.needs_you,
     needsYouReasons: [...card.needs_you_reasons],
     paused: card.paused,
