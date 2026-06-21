@@ -487,6 +487,8 @@ app.on('ready', async () => {
     sendToRenderer, persistSessions, cleanupNamingFlag, clearPendingNotification,
     activateRemoteAccess, deactivateRemoteAccess, getRemoteAccessInfo,
     queryInjector,
+    // M14e: home-opens.json lives under userData, never the workspace git tree.
+    homeOpensDir: app.getPath('userData'),
   });
   cleanupIpcHandlers = ipcResult.cleanup;
   wirePtyToTabFn = ipcResult.wirePtyToTab;

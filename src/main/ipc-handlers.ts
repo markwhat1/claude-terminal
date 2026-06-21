@@ -17,6 +17,7 @@ import type { PtyManager } from './pty-manager';
 import type { SettingsStore } from './settings-store';
 import type { WorkspaceStore } from './workspace-store';
 import { log } from './logger';
+import { appendHomeOpen } from './home-opens-log';
 
 export interface AppState {
   // New: multi-project workspace support
@@ -62,6 +63,13 @@ export interface IpcHandlerDeps {
    * can clear it. Optional so existing handler tests construct without it.
    */
   queryInjector?: QueryInjector;
+  /**
+   * M14e: the userData directory for home-opens.json.
+   * When provided (index.ts passes app.getPath('userData')), the
+   * settings:getStartupView handler appends one entry per launch.
+   * Optional so existing handler tests construct without it.
+   */
+  homeOpensDir?: string;
 }
 
 /** Resolve hooksDir based on dev/production mode */
@@ -789,8 +797,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     await settings.setDefaultShell(shellId);
   });
 
+  // M14e: one entry per process lifetime. The renderer calls getStartupView
+  // once at startup, but a defensive guard prevents a double-append on any
+  // re-render or reload path that could call the handler again.
+  let homeOpenLogged = false;
+
   ipcMain.handle('settings:getStartupView', async () => {
-    return settings.getStartupView();
+    const view = settings.getStartupView();
+    if (!homeOpenLogged && deps.homeOpensDir) {
+      homeOpenLogged = true;
+      appendHomeOpen(deps.homeOpensDir, view === 'home');
+    }
+    return view;
   });
 
   // M14d: idle notification flag (no new broadcast channel; local-only setting)
