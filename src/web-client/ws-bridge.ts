@@ -3,6 +3,7 @@
  * (from src/preload.ts) but communicates over WebSocket instead of Electron IPC.
  */
 import type { Tab, RemoteAccessInfo, RemoteTransport, ProjectConfig, WorkspaceConfig } from '../shared/types';
+import { resolveWsUrl } from './url';
 
 type PtyDataCallback = (tabId: string, data: string) => void;
 type PtyResizedCallback = (tabId: string, cols: number, rows: number) => void;
@@ -30,14 +31,13 @@ export class WebSocketBridge {
    *
    * Returns the initial tab list and active tab ID.
    */
-  connect(token: string): Promise<{
+  connect(token: string, targetUrl?: string, opts?: { timeoutMs?: number }): Promise<{
     tabs: Tab[];
     activeTabId: string | null;
     termSizes: Record<string, { cols: number; rows: number }>;
   }> {
     return new Promise((resolve, reject) => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}`;
+      const wsUrl = resolveWsUrl(window.location, targetUrl);
 
       const ws = new WebSocket(wsUrl);
       this.ws = ws;
@@ -94,11 +94,26 @@ export class WebSocketBridge {
       };
 
       let settled = false;
-      const settle = () => { settled = true; };
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const settle = () => {
+        settled = true;
+        if (timer) { clearTimeout(timer); timer = null; }
+      };
       const origResolve = resolve;
       const origReject = reject;
       resolve = (v) => { settle(); origResolve(v); };
       reject = (e) => { settle(); origReject(e); };
+
+      // Guard against a host that accepts the connection but never completes
+      // auth (e.g. a tailscale-serve proxy with no live backend). Without this
+      // the promise never settles and auto-reconnect-on-launch hangs forever.
+      // Reject before close() so this message wins over the onclose handler.
+      timer = setTimeout(() => {
+        if (!settled) {
+          reject(new Error('Connection timed out'));
+          try { ws.close(); } catch { /* already closing */ }
+        }
+      }, opts?.timeoutMs ?? 12000);
 
       ws.onerror = (err) => {
         console.error('[ws-bridge] error:', err);
