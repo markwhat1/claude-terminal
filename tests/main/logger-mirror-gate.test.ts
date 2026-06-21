@@ -38,6 +38,26 @@ afterAll(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Deterministic flush wait: the logger writes via an async fs.WriteStream, so
+// the file may not exist the instant after a log call. A fixed setTimeout races
+// the stream under full-suite CPU load. Poll for the sentinel instead, bounded.
+// ---------------------------------------------------------------------------
+async function waitForSentinel(file: string, sentinel: string, timeoutMs = 2000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const content = fs.readFileSync(file, 'utf-8');
+      if (content.includes(sentinel)) return content;
+    } catch { /* file not created yet */ }
+    if (Date.now() >= deadline) {
+      // Final read so the caller's assertion reports the real content (or throws ENOENT).
+      return fs.readFileSync(file, 'utf-8');
+    }
+    await new Promise(r => setTimeout(r, 10));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Helper: fresh logger + attached fake window for each test.
 // ---------------------------------------------------------------------------
 async function makeLog() {
@@ -101,10 +121,8 @@ describe('logger mirror gate (M0b-ii)', () => {
     const logFile = path.join(FAKE_USER_DATA, 'logs', 'main.log');
 
     log.debug('disk-only-debug-sentinel');
-    // Allow stream to flush
-    await new Promise(r => setTimeout(r, 30));
-
-    const content = fs.readFileSync(logFile, 'utf-8');
+    // Wait for the async write stream to flush the sentinel to disk.
+    const content = await waitForSentinel(logFile, 'disk-only-debug-sentinel');
     expect(content).toContain('disk-only-debug-sentinel');
 
     // And it must NOT have gone to executeJavaScript
@@ -117,9 +135,8 @@ describe('logger mirror gate (M0b-ii)', () => {
     const logFile = path.join(FAKE_USER_DATA, 'logs', 'main.log');
 
     log.info('disk-only-info-sentinel');
-    await new Promise(r => setTimeout(r, 30));
-
-    const content = fs.readFileSync(logFile, 'utf-8');
+    // Wait for the async write stream to flush the sentinel to disk.
+    const content = await waitForSentinel(logFile, 'disk-only-info-sentinel');
     expect(content).toContain('disk-only-info-sentinel');
 
     const jsCalls = mockExecuteJS.mock.calls.map((c: unknown[]) => String(c[0]));

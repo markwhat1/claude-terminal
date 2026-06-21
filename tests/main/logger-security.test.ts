@@ -35,6 +35,26 @@ afterAll(() => {
 });
 
 // ---------------------------------------------------------------------------
+// Deterministic flush wait: the logger writes via an async fs.WriteStream, so
+// the file may not exist the instant after a log call. A fixed setTimeout races
+// the stream under full-suite CPU load. Poll for the sentinel instead, bounded.
+// ---------------------------------------------------------------------------
+async function waitForSentinel(file: string, sentinel: string, timeoutMs = 2000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const content = fs.readFileSync(file, 'utf-8');
+      if (content.includes(sentinel)) return content;
+    } catch { /* file not created yet */ }
+    if (Date.now() >= deadline) {
+      // Final read so the caller's assertion reports the real content (or throws ENOENT).
+      return fs.readFileSync(file, 'utf-8');
+    }
+    await new Promise(r => setTimeout(r, 10));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Test 1: log path is under userData, not project dir
 // ---------------------------------------------------------------------------
 describe('logger.init path', () => {
@@ -71,17 +91,13 @@ describe('logger.init idempotency', () => {
     const logFile = path.join(FAKE_USER_DATA, 'logs', 'main.log');
 
     log.info('SENTINEL_LINE_MARKER');
-    // Allow the write stream to flush
-    await new Promise(r => setTimeout(r, 20));
-
-    const contentAfterFirst = fs.readFileSync(logFile, 'utf-8');
+    // Wait for the async write stream to flush the sentinel to disk.
+    const contentAfterFirst = await waitForSentinel(logFile, 'SENTINEL_LINE_MARKER');
     expect(contentAfterFirst).toContain('SENTINEL_LINE_MARKER');
 
-    // Second init: must be a no-op (no re-wipe)
+    // Second init: must be a no-op (no re-wipe). The sentinel must still be present.
     log.init(dir2);
-    await new Promise(r => setTimeout(r, 10));
-
-    const contentAfterSecond = fs.readFileSync(logFile, 'utf-8');
+    const contentAfterSecond = await waitForSentinel(logFile, 'SENTINEL_LINE_MARKER');
     expect(contentAfterSecond).toContain('SENTINEL_LINE_MARKER');
   });
 });

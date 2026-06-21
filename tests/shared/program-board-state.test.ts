@@ -24,6 +24,9 @@ import {
   isStateJsonPathSafe,
   isSafeProgramIdentifier,
   mapCardToItem,
+  goalGradientText,
+  heroOverrideCandidates,
+  defaultNeedsYouList,
 } from '@shared/program-board-state';
 
 // ---------------------------------------------------------------------------
@@ -348,40 +351,6 @@ describe('isSafeProgramIdentifier', () => {
     expect(isSafeProgramIdentifier('phase-2')).toBe(true);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Helper stubs used in these tests
-// (These reflect the logic the consumer code is expected to apply,
-//  keeping the tests honest about what "excluded from hero candidates" means.)
-// ---------------------------------------------------------------------------
-
-/** Returns the goal-gradient text for an item given its dodMet/dodTotal/dodGap. */
-function goalGradientText(item: ReturnType<typeof mapCardToItem>): string {
-  if (item.dodMet > 0) {
-    return `${item.dodMet} of ${item.dodTotal} done, last step: ${item.dodGap ?? ''}`;
-  }
-  if (item.dodTotal === 1 && item.dodGap) {
-    return `Start the first step: ${item.dodGap}`;
-  }
-  if (item.dodTotal > 1 && item.dodGap) {
-    return `Start with: ${item.dodGap}, then ${item.dodTotal - 1} more`;
-  }
-  return '';
-}
-
-/** Filters to the hero-override candidate set: needs_you:true and NOT paused. */
-function heroOverrideCandidates(
-  items: ReturnType<typeof mapCardToItem>[],
-): ReturnType<typeof mapCardToItem>[] {
-  return items.filter((i) => i.needsYou && !i.paused);
-}
-
-/** Filters to the default needs-you display list: needs_you:true and NOT paused. */
-function defaultNeedsYouList(
-  items: ReturnType<typeof mapCardToItem>[],
-): ReturnType<typeof mapCardToItem>[] {
-  return items.filter((i) => i.needsYou && !i.paused);
-}
 
 // ---------------------------------------------------------------------------
 // Utility: format a Date as naive-local ISO string "YYYY-MM-DDTHH:mm:ss"

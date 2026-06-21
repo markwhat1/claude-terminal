@@ -325,6 +325,59 @@ function cardKind(card: ProgramCard): DashboardItem['kind'] {
  *   - paused: card.paused verbatim
  *   - detail: blocked_on verbatim (NEVER logged, NEVER fed to composeClaudeQuery)
  */
+// ---------------------------------------------------------------------------
+// Goal-gradient text (1.10): never present a goal at a bare zero fraction.
+// ---------------------------------------------------------------------------
+
+/**
+ * Composes the goal-gradient line for a DashboardItem (PLAN.md 1.10).
+ *
+ * Rules:
+ *   - dodMet > 0: honest fraction "N of M done, last step: <gap>".
+ *   - dodMet === 0, single item (total === 1): "Start the first step: <gap>".
+ *   - dodMet === 0, multi-step (total > 1): "Start with: <gap>, then N more".
+ *
+ * The "0 of N" / "0 of 1" fraction is FORBIDDEN on every surface that shows a
+ * goal (the hero, every DoD row, the caught-up state). This composer never
+ * emits it. Returns '' when there is no DoD gap to lead with.
+ */
+export function goalGradientText(item: DashboardItem): string {
+  if (item.dodMet > 0) {
+    return `${item.dodMet} of ${item.dodTotal} done, last step: ${item.dodGap ?? ''}`;
+  }
+  if (item.dodTotal === 1 && item.dodGap) {
+    return `Start the first step: ${item.dodGap}`;
+  }
+  if (item.dodTotal > 1 && item.dodGap) {
+    return `Start with: ${item.dodGap}, then ${item.dodTotal - 1} more`;
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// Paused-aware candidate filters (1.11, 4.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The hero-override candidate set: needs-you items with paused cards removed.
+ *
+ * A paused card is removed entirely even when needs_you is true (1.11/4.4), so
+ * a card Mark deliberately parked never re-surfaces as the hero.
+ */
+export function heroOverrideCandidates(items: DashboardItem[]): DashboardItem[] {
+  return items.filter((i) => i.needsYou && !i.paused);
+}
+
+/**
+ * The default needs-you display band: needs-you items with paused cards removed.
+ *
+ * Paused cards are folded into a separate quiet "N paused" disclosure, never the
+ * default needs-you band (1.11/4.4).
+ */
+export function defaultNeedsYouList(items: DashboardItem[]): DashboardItem[] {
+  return items.filter((i) => i.needsYou && !i.paused);
+}
+
 export function mapCardToItem(card: ProgramCard): DashboardItem {
   const dodAlmost =
     card.dod.total > 0 && card.dod.total - card.dod.met === 1;
