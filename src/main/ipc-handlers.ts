@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { PermissionMode, RemoteAccessInfo, RepoHookConfig, Tab, ProjectConfig } from '@shared/types';
 import { getAllShellOptions, type ShellOption } from '@shared/platform';
 import { PERMISSION_FLAGS } from '@shared/types';
+import { isAllowedExternalScheme } from '@shared/url-scheme';
 import { WorktreeManager } from './worktree-manager';
 import { HookInstaller } from './hook-installer';
 import { ProjectManager, type ProjectContext } from './project-manager';
@@ -781,6 +782,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
 
   // ---- Open external URLs ----
   ipcMain.on('shell:openExternal', (_event, url: string) => {
+    if (!isAllowedExternalScheme(url)) {
+      log.warn(`shell:openExternal blocked non-http(s) scheme: ${url}`);
+      return;
+    }
     shell.openExternal(url);
   });
 

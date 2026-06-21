@@ -14,6 +14,7 @@ import { registerIpcHandlers, type AppState, type WirePtyToTabFn } from './ipc-h
 import { TunnelManager } from './tunnel-manager';
 import { WebRemoteServer } from './web-remote-server';
 import type { RemoteAccessInfo } from '@shared/types';
+import { isAllowedExternalScheme } from '@shared/url-scheme';
 import { log } from './logger';
 import { checkForUpdate, registerUpdateHandlers } from './update-checker';
 
@@ -292,23 +293,43 @@ const createWindow = () => {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // Always filter setWindowOpenHandler through the scheme allowlist:
+    // there is no app-url passthrough here since new-window requests are
+    // never part of the dev-server / hot-reload flow.
+    if (isAllowedExternalScheme(url)) {
+      shell.openExternal(url);
+    } else {
+      log.warn(`setWindowOpenHandler blocked non-http(s) scheme: ${url}`);
+    }
     return { action: 'deny' };
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
+    // Preserve the app-url passthrough so hot reload survives.
+    // This check must come BEFORE the scheme gate; file:// and the Vite
+    // dev-server URL both start with appUrl and are intentionally allowed.
     const appUrl = MAIN_WINDOW_VITE_DEV_SERVER_URL || 'file://';
-    if (!url.startsWith(appUrl)) {
-      event.preventDefault();
+    if (url.startsWith(appUrl)) return;
+
+    event.preventDefault();
+    if (isAllowedExternalScheme(url)) {
       shell.openExternal(url);
+    } else {
+      log.warn(`will-navigate blocked non-http(s) scheme: ${url}`);
     }
   });
 
-  mainWindow.webContents.on('before-input-event', (_event, input) => {
-    if (input.control && input.shift && input.key === 'I') {
-      mainWindow.webContents.toggleDevTools();
-    }
-  });
+  // Ctrl+Shift+I DevTools toggle is only available in dev builds.
+  // In packaged builds the DevTools menu and F12 are also absent (see
+  // Menu.setApplicationMenu(null) above), so production has no console path
+  // that could expose warn/error lines containing interpolated state.
+  if (!app.isPackaged) {
+    mainWindow.webContents.on('before-input-event', (_event, input) => {
+      if (input.control && input.shift && input.key === 'I') {
+        mainWindow.webContents.toggleDevTools();
+      }
+    });
+  }
 
   mainWindow.on('close', (event) => {
     const workingTabs = tabManager.getAllTabs().filter(t => t.status === 'working');

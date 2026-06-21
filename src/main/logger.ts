@@ -41,13 +41,18 @@ function writeToFile(level: LogLevel, msg: string) {
 }
 
 function emit(level: LogLevel, msg: string) {
+  // writeToFile is unconditional: debug and info are intentionally disk-only.
+  // The executeJavaScript mirror is gated to warn/error to avoid rendering
+  // noisy or ephemeral process data in the renderer DevTools console.
   writeToFile(level, msg);
-  if (_window && !_window.isDestroyed()) {
-    _window.webContents.executeJavaScript(
-      `console.${level}('[main]', ${JSON.stringify(msg)})`,
-    );
-  } else {
-    pending.push({ level, msg });
+  if (level !== 'debug' && level !== 'info') {
+    if (_window && !_window.isDestroyed()) {
+      _window.webContents.executeJavaScript(
+        `console.${level}('[main]', ${JSON.stringify(msg)})`,
+      );
+    } else {
+      pending.push({ level, msg });
+    }
   }
 }
 
