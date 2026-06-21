@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import type { Tab } from '@shared/types';
 import type { ProgramBoardState, DashboardItem, ClosedRecord } from '@shared/program-board-state';
 import {
   mapCardToItem,
@@ -49,6 +50,81 @@ import {
   NEEDS_YOU_ROW_CAP,
   type KnownActionId,
 } from '@shared/home-copy';
+
+// ---------------------------------------------------------------------------
+// Idle-floor constant (M8b-iii, 5.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum elapsed waiting time (ms) before an idle tab is considered
+ * "idleNeedsYou" and enters the unified hero/glance candidate set.
+ *
+ * Tabs with waitingSince less than this threshold ago stay in the subordinate
+ * strip (M9) but are NOT surfaced in the needs-you header count or as the hero.
+ * 60 seconds: short enough to surface genuine waits, long enough to skip the
+ * first-idle blip after a very fast turn.
+ *
+ * Guard: a tab with firstActivityAt:null or waitingSince:null is NEVER
+ * idleNeedsYou regardless of this threshold.
+ */
+export const IDLE_AGE_FLOOR_MS = 60_000;
+
+/**
+ * Returns true when a tab qualifies as past-floor idleNeedsYou.
+ *
+ * A tab is idleNeedsYou when:
+ *   1. Its status is 'idle' or 'requires_response' (human-waiting states).
+ *   2. firstActivityAt is not null (it has had at least one working turn).
+ *   3. waitingSince is not null (the human-waiting span has a start).
+ *   4. The elapsed time since waitingSince is >= IDLE_AGE_FLOOR_MS.
+ */
+function isIdleNeedsYou(tab: Tab, now: Date): boolean {
+  if (tab.status !== 'idle' && tab.status !== 'requires_response') return false;
+  if (tab.firstActivityAt === null) return false;
+  if (tab.waitingSince === null) return false;
+  const elapsedMs = now.getTime() - tab.waitingSince;
+  return elapsedMs >= IDLE_AGE_FLOOR_MS;
+}
+
+/**
+ * Converts a past-floor idle tab into a DashboardItem for the unified hero set.
+ *
+ * Source is 'live-tab'. The item is NOT paused and idleNeedsYou:true.
+ * ageColor is 'green' (the live-tab attention signal comes from the strip, not
+ * the age band; the hero age band is inherited from the board card when the
+ * hero is a board card).
+ */
+function tabToItem(tab: Tab): DashboardItem {
+  return {
+    id: `tab:${tab.id}`,
+    slug: tab.id,
+    source: 'live-tab',
+    kind: 'in_progress',
+    title: tab.name,
+    detail: '',
+    project: tab.cwd ?? null,
+    badges: [],
+    ageColor: 'green',
+    recencyIso: null,
+    gitAgeDays: null,
+    url: null,
+    needsYou: true,
+    needsYouReasons: [],
+    paused: false,
+    timeSensitive: null,
+    dodMet: 0,
+    dodTotal: 0,
+    dodAlmost: false,
+    dodGap: null,
+    requiresResponse: tab.status === 'requires_response',
+    idleNeedsYou: true,
+    justResolved: false,
+    decidedAndWorked: false,
+    horizon: null,
+    avoidanceCategory: null,
+    actions: {},
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -84,6 +160,15 @@ export interface HomeViewProps {
    * Passed as a snapshot; HomeView does NOT mutate it.
    */
   recentCloses: ClosedRecord[];
+  /**
+   * Live session tabs from the App. Used to compute past-floor idleNeedsYou
+   * items for the unified hero/glance candidate set (M8b-iii, 4.6).
+   *
+   * Optional for backward compatibility with existing tests that do not pass
+   * tabs; defaults to []. Tabs with waitingSince:null or firstActivityAt:null
+   * are never idleNeedsYou (null guard, spec explicit).
+   */
+  tabs?: Tab[];
   /** Open a PowerShell into a repo (the Phase-0 hero primary action). */
   onOpenPowerShell: (repo: string | null) => void;
   /** Copy an inert display string to the clipboard. */
@@ -503,6 +588,7 @@ export default function HomeView({
   now,
   closedRecent,
   recentCloses,
+  tabs = [],
   onOpenPowerShell,
   onCopy,
   onOpenExternal,
@@ -551,27 +637,47 @@ export default function HomeView({
     [recentCloseMap],
   );
 
-  // Map cards to items once per state change.
-  const items: DashboardItem[] = useMemo(() => {
+  // Map board cards to items once per state change.
+  const boardItems: DashboardItem[] = useMemo(() => {
     if (!programBoardState) return [];
     return programBoardState.programs.map(mapCardToItem);
   }, [programBoardState]);
 
-  const hero = useMemo(() => selectHero(items, now), [items, now]);
+  // Past-floor idleNeedsYou tab items for the unified hero/glance set (M8b-iii).
+  // Guard null: tabs with firstActivityAt:null or waitingSince:null are excluded.
+  const idleTabItems: DashboardItem[] = useMemo(
+    () => tabs.filter((t) => isIdleNeedsYou(t, now)).map(tabToItem),
+    [tabs, now],
+  );
+
+  // The unified candidate set: board needs-you (non-paused) + past-floor idle
+  // tabs. Paused board cards are excluded here (they fold into "N paused").
+  // idleNeedsYou tabs are never paused (tabToItem sets paused:false).
+  // This set feeds BOTH the hero and the "N need you" count (4.6 invariant).
+  const unifiedCandidates: DashboardItem[] = useMemo(() => {
+    const boardNeedsYou = boardItems.filter((i) => i.needsYou && !i.paused);
+    return [...boardNeedsYou, ...idleTabItems];
+  }, [boardItems, idleTabItems]);
+
+  // items is still needed for paused count and pull-forward candidate (both
+  // consume the full board list, not the unified set).
+  const items = boardItems;
+
+  const hero = useMemo(() => selectHero(unifiedCandidates, now), [unifiedCandidates, now]);
   const needsYouRows = useMemo(() => {
-    const list = defaultNeedsYouList(items);
-    // The hero is the first row; the sub-dominant list is the rest.
-    if (!hero) return list;
-    return list.filter((i) => i.id !== hero.id);
-  }, [items, hero]);
+    // The sub-dominant list is the unified set minus the hero.
+    if (!hero) return unifiedCandidates;
+    return unifiedCandidates.filter((i) => i.id !== hero.id);
+  }, [unifiedCandidates, hero]);
 
   const pausedCount = useMemo(
     () => items.filter((i) => i.paused && i.needsYou).length,
     [items],
   );
 
-  const workingCount = 0; // Live-tab working count is wired in M8b-iii / M9.
-  const needCount = (hero ? 1 : 0) + needsYouRows.length;
+  const workingCount = 0; // Live-tab working count is wired in M9.
+  // The glance count is the unified set size: hero + the rest (4.6 invariant).
+  const needCount = unifiedCandidates.length;
 
   const minutesAgo = programBoardState
     ? parseNaiveLocalMinutesAgo(programBoardState.generated_at, now)
@@ -624,8 +730,10 @@ export default function HomeView({
       );
     }
 
-    // 4. Polled, nothing matched.
-    if (state.programs.length === 0) {
+    // 4. Polled, nothing matched AND no live-tab candidates.
+    // When programs:[] but there are past-floor idleNeedsYou tabs, skip this
+    // state and fall through to the board/caught-up logic (M8b-iii).
+    if (state.programs.length === 0 && idleTabItems.length === 0) {
       return (
         <div className="p-6" data-testid="home-no-programs">
           <p className="text-sm text-muted-foreground">{HOME_COPY.noProgramsTracked}</p>

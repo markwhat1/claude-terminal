@@ -678,6 +678,7 @@ export default function App() {
               now={new Date()}
               closedRecent={closedRecent}
               recentCloses={recentCloses}
+              tabs={tabs}
               onOpenPowerShell={handleOpenPowerShellInRepo}
               onCopy={handleCopyToClipboard}
               onOpenExternal={handleOpenExternal}
