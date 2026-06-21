@@ -22,6 +22,8 @@ export interface WebRemoteServerDeps {
   serializeTerminal: (tabId: string) => Promise<string>;
   wirePtyToTab: WirePtyToTabFn;
   settings: { addRecentDir: (dir: string) => Promise<void> };
+  /** Stable access token to use; a random one is generated when omitted. */
+  token?: string;
 }
 
 // Maps file extensions to Content-Type headers
@@ -46,7 +48,7 @@ interface AuthenticatedSocket {
 }
 
 export class WebRemoteServer {
-  private readonly token: string;
+  private token: string;
   private readonly deps: WebRemoteServerDeps;
   private httpServer: http.Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -54,7 +56,7 @@ export class WebRemoteServer {
 
   constructor(deps: WebRemoteServerDeps) {
     this.deps = deps;
-    this.token = genToken();
+    this.token = deps.token ?? genToken();
   }
 
   get accessToken(): string {

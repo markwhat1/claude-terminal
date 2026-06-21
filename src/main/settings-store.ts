@@ -3,6 +3,8 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { app } from 'electron';
 import { PermissionMode, RemoteTransport, SavedTab } from '@shared/types';
+import { genToken } from '@shared/token';
+import { encryptField, decryptField } from './secure-store';
 import { log } from './logger';
 
 const MAX_RECENT_DIRS = 10;
@@ -14,6 +16,8 @@ interface StoreData {
   permissionMode: PermissionMode;
   defaultShell: string | null;
   remoteTransport: RemoteTransport;
+  /** Encrypted-at-rest host access token (enc:/plain: tagged). */
+  remoteAccessToken: string | null;
 }
 
 const DEFAULTS: StoreData = {
@@ -21,6 +25,7 @@ const DEFAULTS: StoreData = {
   permissionMode: 'bypassPermissions',
   defaultShell: null,
   remoteTransport: 'tailscale',
+  remoteAccessToken: null,
 };
 
 export class SettingsStore {
@@ -89,6 +94,30 @@ export class SettingsStore {
   async setRemoteTransport(transport: RemoteTransport): Promise<void> {
     this.data.remoteTransport = transport;
     await this.save();
+  }
+
+  /**
+   * Return the stable host access token, minting and persisting one on first
+   * use. Async so the first-mint write is observable: callers await this before
+   * serving, so a saved client token is never invalidated by a lost write.
+   */
+  async getOrCreateRemoteAccessToken(): Promise<string> {
+    if (this.data.remoteAccessToken) {
+      const decrypted = decryptField(this.data.remoteAccessToken);
+      if (decrypted) return decrypted;
+    }
+    const token = genToken();
+    this.data.remoteAccessToken = encryptField(token);
+    await this.save();
+    return token;
+  }
+
+  /** Rotate and persist a new host access token (revokes saved client tokens). */
+  async regenerateRemoteAccessToken(): Promise<string> {
+    const token = genToken();
+    this.data.remoteAccessToken = encryptField(token);
+    await this.save();
+    return token;
   }
 
   // --- Per-directory session persistence (stored in <dir>/.claude-terminal/sessions.json) ---

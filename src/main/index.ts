@@ -192,6 +192,7 @@ async function activateRemoteAccess(): Promise<RemoteAccessInfo> {
   if (webRemoteServer) return getRemoteAccessInfo();
 
   activeTransport = settings.getRemoteTransport();
+  const hostToken = await settings.getOrCreateRemoteAccessToken();
 
   webRemoteServer = new WebRemoteServer({
     tabManager, ptyManager, state,
@@ -205,6 +206,7 @@ async function activateRemoteAccess(): Promise<RemoteAccessInfo> {
     },
     wirePtyToTab: wirePtyToTabFn!,
     settings: { addRecentDir: (dir: string) => settings.addRecentDir(dir) },
+    token: hostToken,
   });
 
   try {
