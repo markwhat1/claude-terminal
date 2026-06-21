@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { handleSquirrelEvent } from './squirrel-startup';
 import { PROGRAM_BOARD_STATE_CHANNEL as _PROGRAM_BOARD_STATE_CHANNEL } from '@shared/program-board-state';
+import {
+  ProgramBoardReader,
+  resolveProgramBoardStatePath,
+} from './program-board-reader';
 
 // ---------------------------------------------------------------------------
 // Program-board channel constants (re-exported for tests and type consumers)
@@ -89,6 +93,7 @@ const tunnelManager = new TunnelManager();
 let webRemoteServer: WebRemoteServer | null = null;
 let cleanupIpcHandlers: (() => void) | null = null;
 let wirePtyToTabFn: WirePtyToTabFn | null = null;
+let programBoardReader: ProgramBoardReader | null = null;
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -450,6 +455,19 @@ app.on('ready', async () => {
   wirePtyToTabFn = ipcResult.wirePtyToTab;
 
   createWindow();
+
+  // Construct the ProgramBoardReader and wire it into state so the
+  // program-board:getState handler returns live data instead of the sentinel.
+  // The reader does an immediate first read on construction, then polls every
+  // ~20s. Each successful parse broadcasts the new state to the renderer.
+  const { stateFilePath, root } = resolveProgramBoardStatePath();
+  programBoardReader = new ProgramBoardReader(stateFilePath, root, {
+    onStateUpdated: (boardState) => {
+      sendToRenderer(PROGRAM_BOARD_STATE_CHANNEL, boardState);
+    },
+  });
+  (state as any).programBoardReader = programBoardReader;
+  log.info('[program-board] reader started, polling', stateFilePath);
 });
 
 app.on('window-all-closed', async () => {
@@ -470,6 +488,8 @@ app.on('window-all-closed', async () => {
   }
 
   ptyManager.killAll();
+  programBoardReader?.stop();
+  programBoardReader = null;
   cleanupIpcHandlers?.();
   tunnelManager.stop();
   webRemoteServer?.stop();

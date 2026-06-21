@@ -37,6 +37,12 @@ export interface ProgramBoardReaderOptions {
   retryDelayMs?: number;
   /** Max retries per poll cycle. Default: 3. */
   maxRetries?: number;
+  /**
+   * Called after every successful parse with the newly-parsed state.
+   * Use this in index.ts to broadcast via sendToRenderer without coupling
+   * this Electron-free module to the Electron broadcast path.
+   */
+  onStateUpdated?: (state: ProgramBoardState) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +56,7 @@ export class ProgramBoardReader {
   private readonly retryDelayMs: number;
   private readonly maxRetries: number;
   private readonly pathSafe: boolean;
+  private readonly onStateUpdated: ((state: ProgramBoardState) => void) | undefined;
 
   private lastGoodState: ProgramBoardState;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -70,6 +77,7 @@ export class ProgramBoardReader {
     this.pollIntervalMs = options.pollIntervalMs ?? 20_000;
     this.retryDelayMs = options.retryDelayMs ?? 100;
     this.maxRetries = options.maxRetries ?? 3;
+    this.onStateUpdated = options.onStateUpdated;
 
     // Validate the path once at construction time.
     this.pathSafe = isStateJsonPathSafe(stateFilePath, root);
@@ -100,6 +108,14 @@ export class ProgramBoardReader {
   }
 
   /**
+   * Alias for getLastGoodState(). The ipc-handlers.ts program-board:getState
+   * handler calls reader.getState(), so this method must exist.
+   */
+  getState(): ProgramBoardState {
+    return this.lastGoodState;
+  }
+
+  /**
    * Performs one poll cycle: reads state.json with retry, updates last-good
    * on a successful parse.
    *
@@ -122,6 +138,7 @@ export class ProgramBoardReader {
         const parsed = parseState(raw);
         if (parsed !== null) {
           this.lastGoodState = parsed;
+          this.onStateUpdated?.(parsed);
           return;
         }
         // Unparseable JSON; treat like a transient failure and retry.
