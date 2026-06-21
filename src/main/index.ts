@@ -164,6 +164,15 @@ function persistSessions() {
 // ---------------------------------------------------------------------------
 // Remote access
 // ---------------------------------------------------------------------------
+// Serialize activate/deactivate/regenerate so a tunnel error/exit event or a
+// concurrent user action can never recreate or null webRemoteServer mid-op.
+let remoteLock: Promise<unknown> = Promise.resolve();
+function withRemoteLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = remoteLock.then(fn, fn);
+  remoteLock = run.catch(() => {});
+  return run;
+}
+
 function getRemoteAccessInfo(): RemoteAccessInfo {
   if (!webRemoteServer) {
     return { status: 'inactive', tunnelUrl: null, token: null, error: null };
@@ -188,7 +197,8 @@ function getRemoteAccessInfo(): RemoteAccessInfo {
   };
 }
 
-async function activateRemoteAccess(): Promise<RemoteAccessInfo> {
+function activateRemoteAccess(): Promise<RemoteAccessInfo> {
+  return withRemoteLock(async (): Promise<RemoteAccessInfo> => {
   if (webRemoteServer) return getRemoteAccessInfo();
 
   activeTransport = settings.getRemoteTransport();
@@ -230,14 +240,27 @@ async function activateRemoteAccess(): Promise<RemoteAccessInfo> {
   }
 
   return getRemoteAccessInfo();
+  });
 }
 
-async function deactivateRemoteAccess(): Promise<void> {
-  tunnelManager.stop();
-  webRemoteServer?.stop();
-  webRemoteServer = null;
-  localRemoteUrl = null;
-  activeTransport = 'cloudflare';
+function deactivateRemoteAccess(): Promise<void> {
+  return withRemoteLock(async () => {
+    tunnelManager.stop();
+    webRemoteServer?.stop();
+    webRemoteServer = null;
+    localRemoteUrl = null;
+    activeTransport = 'cloudflare';
+  });
+}
+
+// Rotate the access code in place: no transport restart, so the tunnel/tailnet
+// URL is unchanged; existing remote clients are dropped and must re-enter.
+function regenerateRemoteCode(): Promise<RemoteAccessInfo> {
+  return withRemoteLock(async () => {
+    const token = await settings.regenerateRemoteAccessToken();
+    webRemoteServer?.setToken(token);
+    return getRemoteAccessInfo();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -390,7 +413,7 @@ app.on('ready', async () => {
   const ipcResult = registerIpcHandlers({
     tabManager, ptyManager, settings, workspaceStore, state,
     sendToRenderer, persistSessions, cleanupNamingFlag, clearPendingNotification,
-    activateRemoteAccess, deactivateRemoteAccess, getRemoteAccessInfo,
+    activateRemoteAccess, deactivateRemoteAccess, getRemoteAccessInfo, regenerateRemoteCode,
   });
   cleanupIpcHandlers = ipcResult.cleanup;
   wirePtyToTabFn = ipcResult.wirePtyToTab;

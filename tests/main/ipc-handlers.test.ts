@@ -162,6 +162,7 @@ function makeMockDeps(): IpcHandlerDeps {
     activateRemoteAccess: vi.fn(async () => ({ status: 'connecting' as const, tunnelUrl: null, token: 'test-token', error: null })),
     deactivateRemoteAccess: vi.fn(async () => {}),
     getRemoteAccessInfo: vi.fn(() => ({ status: 'inactive' as const, tunnelUrl: null, token: null, error: null })),
+    regenerateRemoteCode: vi.fn(async () => ({ status: 'inactive' as const, tunnelUrl: null, token: null, error: null })),
   };
 }
 
@@ -193,7 +194,7 @@ describe('registerIpcHandlers', () => {
       'settings:recentDirs', 'settings:removeRecentDir', 'settings:permissionMode', 'settings:getDefaultShell', 'settings:setDefaultShell',
       'settings:getRemoteTransport', 'settings:setRemoteTransport',
       'dialog:selectDirectory', 'cli:getStartDir',
-      'remote:activate', 'remote:deactivate', 'remote:getInfo',
+      'remote:activate', 'remote:deactivate', 'remote:getInfo', 'remote:regenerateCode',
       'instance:getHue',
     ];
     for (const channel of expectedHandlers) {
@@ -304,6 +305,13 @@ describe('registerIpcHandlers', () => {
     await handler({}, 'cloudflare');
 
     expect(deps.settings.setRemoteTransport).toHaveBeenCalledWith('cloudflare');
+  });
+
+  it('remote:regenerateCode delegates to the handler', async () => {
+    const handler = handlers.get('remote:regenerateCode')!;
+    await handler({});
+
+    expect(deps.regenerateRemoteCode).toHaveBeenCalled();
   });
 
   it('registers pty:pause and pty:resume listeners', () => {

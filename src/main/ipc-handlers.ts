@@ -53,6 +53,7 @@ export interface IpcHandlerDeps {
   activateRemoteAccess: () => Promise<RemoteAccessInfo>;
   deactivateRemoteAccess: () => Promise<void>;
   getRemoteAccessInfo: () => RemoteAccessInfo;
+  regenerateRemoteCode: () => Promise<RemoteAccessInfo>;
 }
 
 /** Resolve hooksDir based on dev/production mode */
@@ -803,6 +804,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
 
   ipcMain.handle('remote:getInfo', async () => {
     return deps.getRemoteAccessInfo();
+  });
+
+  ipcMain.handle('remote:regenerateCode', async () => {
+    return deps.regenerateRemoteCode();
   });
 
   // Return cleanup function and wirePtyToTab for external use

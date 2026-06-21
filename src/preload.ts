@@ -129,6 +129,8 @@ const api = {
     ipcRenderer.invoke('remote:deactivate'),
   getRemoteAccessInfo: (): Promise<RemoteAccessInfo> =>
     ipcRenderer.invoke('remote:getInfo'),
+  regenerateRemoteCode: (): Promise<RemoteAccessInfo> =>
+    ipcRenderer.invoke('remote:regenerateCode'),
   getRemoteTransport: (): Promise<RemoteTransport> =>
     ipcRenderer.invoke('settings:getRemoteTransport'),
   setRemoteTransport: (transport: RemoteTransport): Promise<void> =>

@@ -361,6 +361,9 @@ export class WebSocketBridge {
       getRemoteAccessInfo: async (): Promise<RemoteAccessInfo> => ({
         status: 'inactive', tunnelUrl: null, token: null, error: null,
       }),
+      regenerateRemoteCode: async (): Promise<RemoteAccessInfo> => ({
+        status: 'inactive', tunnelUrl: null, token: null, error: null,
+      }),
       // Transport is a host-local setting — the remote client can't change it.
       getRemoteTransport: async (): Promise<RemoteTransport> => 'cloudflare',
       setRemoteTransport: async (): Promise<void> => {},

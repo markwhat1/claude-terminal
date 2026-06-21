@@ -63,6 +63,19 @@ export class WebRemoteServer {
     return this.token;
   }
 
+  /**
+   * Rotate the access token in place and drop all connected clients, forcing
+   * them to re-authenticate with the new code. Does not restart the transport,
+   * so the tunnel/tailnet URL is unchanged.
+   */
+  setToken(token: string): void {
+    this.token = token;
+    for (const client of this.clients) {
+      try { client.ws.close(); } catch { /* already closing */ }
+    }
+    this.clients.clear();
+  }
+
   /** Start the server. Pass 0 to let the OS pick a free port. Returns the actual port. */
   async start(port: number): Promise<number> {
     const staticRoot = this.resolveStaticRoot();
