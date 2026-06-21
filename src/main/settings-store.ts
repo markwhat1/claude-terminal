@@ -13,12 +13,14 @@ interface StoreData {
   recentDirs: string[];
   permissionMode: PermissionMode;
   defaultShell: string | null;
+  startupView: 'lastSession' | 'home';
 }
 
 const DEFAULTS: StoreData = {
   recentDirs: [],
   permissionMode: 'bypassPermissions',
   defaultShell: null,
+  startupView: 'lastSession',
 };
 
 export class SettingsStore {
@@ -77,6 +79,15 @@ export class SettingsStore {
 
   async setDefaultShell(shellId: string | null): Promise<void> {
     this.data.defaultShell = shellId;
+    await this.save();
+  }
+
+  getStartupView(): 'lastSession' | 'home' {
+    return this.data.startupView;
+  }
+
+  async setStartupView(view: 'lastSession' | 'home'): Promise<void> {
+    this.data.startupView = view;
     await this.save();
   }
 

@@ -62,6 +62,30 @@ describe('SettingsStore', () => {
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getRecentDirs()).toContain('D:\\dev\\Persist');
   });
+
+  // M14a: startupView getter/setter
+  it('returns lastSession as default startupView', () => {
+    expect(store.getStartupView()).toBe('lastSession');
+  });
+
+  it('round-trips startupView home', async () => {
+    await store.setStartupView('home');
+    expect(store.getStartupView()).toBe('home');
+  });
+
+  it('persists startupView to disk and reloads', async () => {
+    await store.setStartupView('home');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getStartupView()).toBe('home');
+  });
+
+  it('tolerates a missing startupView key via DEFAULTS merge', async () => {
+    // Write a store file that has no startupView key
+    const fs2 = await import('fs/promises');
+    await fs2.writeFile(tmpFile, JSON.stringify({ recentDirs: [], permissionMode: 'bypassPermissions', defaultShell: null }), 'utf-8');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getStartupView()).toBe('lastSession');
+  });
 });
 
 describe('SettingsStore sessions', () => {
