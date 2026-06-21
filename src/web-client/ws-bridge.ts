@@ -340,7 +340,7 @@ export class WebSocketBridge {
           this.send({ type: 'worktree:currentBranch' });
         });
       },
-      listWorktreeDetails: async (_projectId?: string): Promise<{ name: string; path: string; clean: boolean; changesCount: number }[]> => [],
+      listWorktreeDetails: async (_projectId?: string): Promise<{ name: string; path: string; clean: boolean; changesCount: number; sourceBranch: string | null }[]> => [],
       removeWorktree: async (_worktreePath: string, _projectId?: string): Promise<void> => {},
       checkWorktreeStatus: async (_worktreePath: string, _projectId?: string): Promise<{ clean: boolean; changesCount: number }> => ({ clean: true, changesCount: 0 }),
 

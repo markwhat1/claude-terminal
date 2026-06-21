@@ -125,7 +125,7 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
     Promise.resolve('main'),
   listWorktreeDetails: (
     _projectId?: string,
-  ): Promise<{ name: string; path: string; clean: boolean; changesCount: number }[]> =>
+  ): Promise<{ name: string; path: string; clean: boolean; changesCount: number; sourceBranch: string | null }[]> =>
     Promise.resolve([]),
   removeWorktree: (_worktreePath: string, _projectId?: string): Promise<void> =>
     Promise.resolve(),

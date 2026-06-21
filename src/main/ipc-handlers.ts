@@ -745,7 +745,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
 
     const wtManager = project?.worktreeManager ?? state.worktreeManager;
     if (!wtManager) throw new Error('Not a git repository');
-    const worktreePath = await wtManager.create(name);
+    const { path: worktreePath } = await wtManager.create(name);
 
     const hookEngine = project?.hookEngine ?? state.hookEngine;
     if (hookEngine) {

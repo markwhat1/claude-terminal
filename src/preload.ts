@@ -76,7 +76,7 @@ const api = {
     ipcRenderer.invoke('worktree:create', projectId, name),
   getCurrentBranch: (projectId?: string): Promise<string> =>
     ipcRenderer.invoke('worktree:currentBranch', projectId),
-  listWorktreeDetails: (projectId?: string): Promise<{ name: string; path: string; clean: boolean; changesCount: number }[]> =>
+  listWorktreeDetails: (projectId?: string): Promise<{ name: string; path: string; clean: boolean; changesCount: number; sourceBranch: string | null }[]> =>
     ipcRenderer.invoke('worktree:listDetails', projectId),
   removeWorktree: (worktreePath: string, projectId?: string): Promise<void> =>
     ipcRenderer.invoke('worktree:remove', worktreePath, projectId),

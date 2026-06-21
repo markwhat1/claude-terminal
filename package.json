@@ -13,6 +13,7 @@
     "lint": "eslint --ext .ts,.tsx .",
     "watch": "electron-forge start",
     "build:web": "vite build --config vite.web.config.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "release": "dotenv -- release-it",

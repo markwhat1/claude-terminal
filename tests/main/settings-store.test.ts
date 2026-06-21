@@ -329,15 +329,15 @@ describe('SettingsStore sessions', () => {
   });
 
   it('saveSessions writes and getSessions reads back', async () => {
-    const tabs = [{ name: 'Tab 1', cwd: '/tmp', worktree: null, sessionId: 'abc-123' }];
+    const tabs = [{ name: 'Tab 1', cwd: '/tmp', worktree: null, sourceBranch: null, sessionId: 'abc-123' }];
     await store.saveSessions(tmpDir, tabs);
     const result = await store.getSessions(tmpDir);
     expect(result).toEqual(tabs);
   });
 
   it('saveSessions overwrites previous sessions', async () => {
-    const tabs1 = [{ name: 'Tab 1', cwd: '/tmp', worktree: null, sessionId: 'abc' }];
-    const tabs2 = [{ name: 'Tab 2', cwd: '/tmp', worktree: null, sessionId: 'def' }];
+    const tabs1 = [{ name: 'Tab 1', cwd: '/tmp', worktree: null, sourceBranch: null, sessionId: 'abc' }];
+    const tabs2 = [{ name: 'Tab 2', cwd: '/tmp', worktree: null, sourceBranch: null, sessionId: 'def' }];
     await store.saveSessions(tmpDir, tabs1);
     await store.saveSessions(tmpDir, tabs2);
     const result = await store.getSessions(tmpDir);
@@ -357,6 +357,6 @@ describe('SettingsStore sessions', () => {
     const blockingFile = path.join(tmpDir, 'blocker');
     fs.writeFileSync(blockingFile, '');
     const badDir = path.join(blockingFile, 'sessions');
-    await expect(store.saveSessions(badDir, [{ name: 'x', cwd: '/', worktree: null, sessionId: 'z' }])).resolves.not.toThrow();
+    await expect(store.saveSessions(badDir, [{ name: 'x', cwd: '/', worktree: null, sourceBranch: null, sessionId: 'z' }])).resolves.not.toThrow();
   });
 });
