@@ -26,8 +26,9 @@ import {
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import type { Tab } from '@shared/types';
+import type { Tab, ProjectConfig } from '@shared/types';
 import type { ProgramBoardState, DashboardItem, ClosedRecord } from '@shared/program-board-state';
+import SessionStrip from './SessionStrip';
 import {
   mapCardToItem,
   defaultNeedsYouList,
@@ -162,13 +163,25 @@ export interface HomeViewProps {
   recentCloses: ClosedRecord[];
   /**
    * Live session tabs from the App. Used to compute past-floor idleNeedsYou
-   * items for the unified hero/glance candidate set (M8b-iii, 4.6).
+   * items for the unified hero/glance candidate set (M8b-iii, 4.6) and to
+   * drive the subordinate SessionStrip (M9).
    *
    * Optional for backward compatibility with existing tests that do not pass
    * tabs; defaults to []. Tabs with waitingSince:null or firstActivityAt:null
    * are never idleNeedsYou (null guard, spec explicit).
    */
   tabs?: Tab[];
+  /**
+   * The project registry for per-row strip hues (M9 / 6.4).
+   * Optional for backward compatibility; defaults to [].
+   */
+  projects?: ProjectConfig[];
+  /**
+   * The Home-aware tab-select handler from App (M9 / 6.4).
+   * Passed to SessionStrip so row-clicks jump to the right tab.
+   * Optional for backward compatibility; defaults to a no-op.
+   */
+  handleSelectTab?: (tabId: string) => void;
   /** Open a PowerShell into a repo (the Phase-0 hero primary action). */
   onOpenPowerShell: (repo: string | null) => void;
   /** Copy an inert display string to the clipboard. */
@@ -544,22 +557,8 @@ function CaughtUpSurface({
   );
 }
 
-// ---------------------------------------------------------------------------
-// The session strip (subordinate, 6.4) -- Phase-0 placeholder line only.
-// SessionStrip rows are M9; M8a renders the subordinate region so the layout
-// and the muted-foreground dominance level are testable.
-// ---------------------------------------------------------------------------
-
-function SessionStrip() {
-  return (
-    <div
-      className="text-xs text-muted-foreground px-2 py-1"
-      data-testid="home-strip"
-    >
-      {HOME_COPY.noActiveSessions}
-    </div>
-  );
-}
+// SessionStrip is now the real component imported from ./SessionStrip (M9).
+// The Phase-0 placeholder is removed.
 
 // ---------------------------------------------------------------------------
 // HomeView root
@@ -589,6 +588,8 @@ export default function HomeView({
   closedRecent,
   recentCloses,
   tabs = [],
+  projects = [],
+  handleSelectTab = () => undefined,
   onOpenPowerShell,
   onCopy,
   onOpenExternal,
@@ -675,7 +676,27 @@ export default function HomeView({
     [items],
   );
 
-  const workingCount = 0; // Live-tab working count is wired in M9.
+  // Live working count from the real tabs (M9). Counts ALL working tabs
+  // cross-project, matching the strip's cross-project scope.
+  const workingCount = useMemo(
+    () => tabs.filter((t) => t.status === 'working').length,
+    [tabs],
+  );
+
+  // Set of tab ids that just resolved (one-shot fade for the strip, M9 / 1.5).
+  // Derived from the recentCloses by matching against tab ids (source:'live-tab'
+  // records have ids prefixed with 'tab:'; board cards have 'pb:').
+  const justResolvedTabIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const rec of recentCloses) {
+      // live-tab items have ids like "tab:<tabId>", board cards "pb:<slug>".
+      if (rec.id.startsWith('tab:')) {
+        s.add(rec.id.slice(4));
+      }
+    }
+    return s;
+  }, [recentCloses]);
+
   // The glance count is the unified set size: hero + the rest (4.6 invariant).
   const needCount = unifiedCandidates.length;
 
@@ -813,7 +834,13 @@ export default function HomeView({
     >
       {body}
       {/* The subordinate strip lives below the board content (6.4). */}
-      <SessionStrip />
+      <SessionStrip
+        tabs={tabs}
+        now={now.getTime()}
+        handleSelectTab={handleSelectTab}
+        justResolvedTabIds={justResolvedTabIds}
+        projects={projects}
+      />
     </div>
   );
 }

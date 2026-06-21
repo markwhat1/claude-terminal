@@ -679,6 +679,8 @@ export default function App() {
               closedRecent={closedRecent}
               recentCloses={recentCloses}
               tabs={tabs}
+              projects={projects}
+              handleSelectTab={handleSelectTab}
               onOpenPowerShell={handleOpenPowerShellInRepo}
               onCopy={handleCopyToClipboard}
               onOpenExternal={handleOpenExternal}
