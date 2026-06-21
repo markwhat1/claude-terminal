@@ -141,6 +141,9 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   getDefaultShell: (): Promise<string | null> => Promise.resolve(null),
   setDefaultShell: (_shellId: string | null): Promise<void> => Promise.resolve(),
   getStartupView: (): Promise<'lastSession' | 'home'> => Promise.resolve('lastSession'),
+  // M14d: idle notification flag
+  getNotifyOnIdle: (): Promise<boolean> => Promise.resolve(false),
+  setNotifyOnIdle: (_value: boolean): Promise<void> => Promise.resolve(),
 
   // Hook config
   getHookConfig: (_projectId?: string): Promise<RepoHookConfig> =>

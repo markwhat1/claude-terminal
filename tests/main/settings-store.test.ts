@@ -86,6 +86,51 @@ describe('SettingsStore', () => {
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getStartupView()).toBe('lastSession');
   });
+
+  // M14d: notifyOnIdle flag
+  it('returns false as default notifyOnIdle', () => {
+    expect(store.getNotifyOnIdle()).toBe(false);
+  });
+
+  it('round-trips notifyOnIdle true', async () => {
+    await store.setNotifyOnIdle(true);
+    expect(store.getNotifyOnIdle()).toBe(true);
+  });
+
+  it('round-trips notifyOnIdle false after true', async () => {
+    await store.setNotifyOnIdle(true);
+    await store.setNotifyOnIdle(false);
+    expect(store.getNotifyOnIdle()).toBe(false);
+  });
+
+  it('persists notifyOnIdle to disk and reloads', async () => {
+    await store.setNotifyOnIdle(true);
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getNotifyOnIdle()).toBe(true);
+  });
+
+  it('tolerates a missing notifyOnIdle key via DEFAULTS merge (defaults to false)', async () => {
+    const fs2 = await import('fs/promises');
+    await fs2.writeFile(tmpFile, JSON.stringify({ recentDirs: [], permissionMode: 'bypassPermissions', defaultShell: null }), 'utf-8');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getNotifyOnIdle()).toBe(false);
+  });
+
+  // M14d: notifyOnIdleFirstRunShown flag
+  it('returns false as default notifyOnIdleFirstRunShown', () => {
+    expect(store.getNotifyOnIdleFirstRunShown()).toBe(false);
+  });
+
+  it('round-trips notifyOnIdleFirstRunShown true', async () => {
+    await store.setNotifyOnIdleFirstRunShown(true);
+    expect(store.getNotifyOnIdleFirstRunShown()).toBe(true);
+  });
+
+  it('persists notifyOnIdleFirstRunShown to disk and reloads', async () => {
+    await store.setNotifyOnIdleFirstRunShown(true);
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getNotifyOnIdleFirstRunShown()).toBe(true);
+  });
 });
 
 describe('SettingsStore sessions', () => {

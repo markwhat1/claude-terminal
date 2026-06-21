@@ -793,6 +793,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     return settings.getStartupView();
   });
 
+  // M14d: idle notification flag (no new broadcast channel; local-only setting)
+  ipcMain.handle('settings:getNotifyOnIdle', async () => {
+    return settings.getNotifyOnIdle();
+  });
+
+  ipcMain.handle('settings:setNotifyOnIdle', async (_event, value: boolean) => {
+    await settings.setNotifyOnIdle(value);
+  });
+
   // ---- Hook Config ----
   ipcMain.handle('hookConfig:load', async (_event, projectId?: string) => {
     const project = projectId ? state.projectManager?.getProject(projectId) : undefined;

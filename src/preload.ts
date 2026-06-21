@@ -94,6 +94,11 @@ const api = {
     ipcRenderer.invoke('settings:setDefaultShell', shellId),
   getStartupView: (): Promise<'lastSession' | 'home'> =>
     ipcRenderer.invoke('settings:getStartupView'),
+  // M14d: idle notification flag (local-only; not forwarded to remote clients)
+  getNotifyOnIdle: (): Promise<boolean> =>
+    ipcRenderer.invoke('settings:getNotifyOnIdle'),
+  setNotifyOnIdle: (value: boolean): Promise<void> =>
+    ipcRenderer.invoke('settings:setNotifyOnIdle', value),
 
   // Hook config
   getHookConfig: (projectId?: string): Promise<RepoHookConfig> =>

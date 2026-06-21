@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, Notification, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { handleSquirrelEvent } from './squirrel-startup';
@@ -313,6 +313,24 @@ const { handleHookMessage, clearPendingNotification } = createHookRouter({
   // post-turn toast suppression for the watched injected tab.
   onInjectionIdle: (tabId) => queryInjector.onIdle(tabId),
   consumeInjectionNotifySuppression: (tabId) => queryInjector.consumeNotifySuppression(tabId),
+  // M14d: idle notification demotion (notifyOnIdle:false default).
+  // The hook-router reads the flag at toast-time so a settings change takes
+  // effect on the next idle without restarting the app.
+  getNotifyOnIdle: () => settings.getNotifyOnIdle(),
+  isFirstRunNoteShown: () => settings.getNotifyOnIdleFirstRunShown(),
+  showFirstRunNote: () => {
+    // Mark the note shown first so a rapid second idle cannot double-fire
+    // even if the async save hasn't completed yet.
+    void settings.setNotifyOnIdleFirstRunShown(true);
+    if (Notification.isSupported()) {
+      const n = new Notification({
+        title: 'ClaudeTerminal',
+        body: 'Idle notifications are off; the dashboard shows finished sessions. Turn them on in Settings.',
+      });
+      n.show();
+    }
+    log.info('[M14d] first-run note shown');
+  },
 });
 
 // ---------------------------------------------------------------------------

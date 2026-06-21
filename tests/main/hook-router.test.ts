@@ -302,4 +302,123 @@ describe('hook-router', () => {
       ).not.toThrow();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // M14d: notifyOnIdle demotion (notifyOnIdle:false default)
+  // -------------------------------------------------------------------------
+
+  describe('M14d shouldNotify predicate', () => {
+    function makeNotifyDeps(notifyOnIdle: boolean, firstRunShown = true) {
+      const base = makeMockDeps();
+      return {
+        ...base,
+        getNotifyOnIdle: vi.fn(() => notifyOnIdle),
+        showFirstRunNote: vi.fn(),
+        isFirstRunNoteShown: vi.fn(() => firstRunShown),
+      };
+    }
+
+    it('at the DEFAULT (notifyOnIdle:false) an idle event does NOT fire the toast', () => {
+      // The behavioral assertion: a bare store-value check cannot pass this because
+      // we wire getNotifyOnIdle to return false and assert Notification is not called.
+      const d = makeNotifyDeps(false);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      expect(Notification).not.toHaveBeenCalled();
+    });
+
+    it('at the DEFAULT (notifyOnIdle:false) a requires_response event STILL fires the toast', () => {
+      // The chime for "needs your input" is preserved regardless of notifyOnIdle.
+      const d = makeNotifyDeps(false);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:input', data: null });
+
+      expect(Notification).toHaveBeenCalled();
+    });
+
+    it('with notifyOnIdle:true an idle event fires the toast (opt-back-in path is intact)', () => {
+      const d = makeNotifyDeps(true);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      expect(Notification).toHaveBeenCalled();
+    });
+
+    it('with notifyOnIdle:true a requires_response event fires the toast', () => {
+      const d = makeNotifyDeps(true);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:input', data: null });
+
+      expect(Notification).toHaveBeenCalled();
+    });
+
+    it('the first-run note fires on the first idle when notifyOnIdle:false and not yet shown', () => {
+      // firstRunShown:false means the note has not been displayed yet.
+      const d = makeNotifyDeps(false, false);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      expect(d.showFirstRunNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('the first-run note does NOT fire again once shown', () => {
+      // firstRunShown:true means it was already displayed; do not call showFirstRunNote again.
+      const d = makeNotifyDeps(false, true);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      expect(d.showFirstRunNote).not.toHaveBeenCalled();
+    });
+
+    it('the first-run note does NOT fire when notifyOnIdle:true (only relevant when idle toasts are off)', () => {
+      const d = makeNotifyDeps(true, false);
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null });
+
+      expect(d.showFirstRunNote).not.toHaveBeenCalled();
+    });
+
+    it('works without notifyOnIdle callbacks (backward compatible: defaults to old notify-all behavior)', () => {
+      // When getNotifyOnIdle is absent the router falls back to notifying on idle (old behavior).
+      const d = makeMockDeps();
+      const tab = { id: 'tab-1', name: 'Tab 1', projectId: '' };
+      (d.tabManager.getTab as ReturnType<typeof vi.fn>).mockReturnValue(tab);
+      (d.tabManager.getActiveTabId as ReturnType<typeof vi.fn>).mockReturnValue('other-tab');
+      const { handleHookMessage: handle } = createHookRouter(d);
+
+      expect(() => handle({ tabId: 'tab-1', event: 'tab:status:idle', data: null })).not.toThrow();
+      // Old behavior: toast fires (no opt-out dep wired).
+      expect(Notification).toHaveBeenCalled();
+    });
+  });
 });

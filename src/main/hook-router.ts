@@ -28,6 +28,43 @@ export interface HookRouterDeps {
    * MAIN-active does not toast on the turn it finishes. Optional.
    */
   consumeInjectionNotifySuppression?: (tabId: string) => boolean;
+  /**
+   * M14d: returns the current notifyOnIdle setting. When false (the default),
+   * idle ("finished working") toasts are suppressed; requires_response toasts
+   * are always preserved. Optional: absent means old behavior (notify on idle).
+   */
+  getNotifyOnIdle?: () => boolean;
+  /**
+   * M14d: returns true when the one-time first-run note has already been shown.
+   * Optional: absent means the note is never shown (backward compatible).
+   */
+  isFirstRunNoteShown?: () => boolean;
+  /**
+   * M14d: called the first time an idle event fires with notifyOnIdle:false and
+   * the first-run note has not yet been shown. The caller persists the shown
+   * state so it fires exactly once. Optional.
+   */
+  showFirstRunNote?: () => void;
+}
+
+/**
+ * M14d: shouldNotify predicate.
+ *
+ * kind 'idle'              - the "finished working" toast. Suppressed when
+ *                            notifyOnIdle is false (the default).
+ * kind 'requires_response' - the "needs your input" chime. Always preserved,
+ *                            regardless of notifyOnIdle.
+ *
+ * When getNotifyOnIdle is absent (old callers) the predicate falls back to
+ * true for both kinds, preserving the pre-M14d behavior.
+ */
+export function shouldNotify(
+  kind: 'idle' | 'requires_response',
+  getNotifyOnIdle?: () => boolean,
+): boolean {
+  if (kind === 'requires_response') return true;
+  // kind === 'idle': use the flag value, default true when dep is absent.
+  return getNotifyOnIdle ? getNotifyOnIdle() : true;
 }
 
 export function createHookRouter(deps: HookRouterDeps) {
@@ -145,10 +182,21 @@ export function createHookRouter(deps: HookRouterDeps) {
         // only the FIRST post-injection Stop idle is silenced.
         const suppressInjectionToast =
           deps.consumeInjectionNotifySuppression?.(tabId) ?? false;
-        if (!isActive && tab && !suppressInjectionToast) {
+        // M14d: suppress the idle toast when notifyOnIdle is false. The
+        // requires_response toast is never demoted (shouldNotify returns true
+        // unconditionally for that kind).
+        const idleNotifyAllowed = shouldNotify('idle', deps.getNotifyOnIdle);
+        if (!isActive && tab && !suppressInjectionToast && idleNotifyAllowed) {
           const projectName = tab.projectId ? deps.getProjectName(tab.projectId) : undefined;
           const title = projectName ? `${projectName} - ${tab.name}` : tab.name;
           notifyTabActivity(tabId, title, 'Claude has finished working');
+        }
+        // M14d first-run note: fires exactly once, on the first idle when
+        // notifyOnIdle is false and the note has not been shown before.
+        if (!idleNotifyAllowed && deps.showFirstRunNote && deps.isFirstRunNoteShown) {
+          if (!deps.isFirstRunNoteShown()) {
+            deps.showFirstRunNote();
+          }
         }
         break;
       }

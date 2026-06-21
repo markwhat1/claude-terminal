@@ -14,6 +14,10 @@ interface StoreData {
   permissionMode: PermissionMode;
   defaultShell: string | null;
   startupView: 'lastSession' | 'home';
+  /** M14d: suppress idle ("finished working") OS toasts. Default false (calm). */
+  notifyOnIdle: boolean;
+  /** M14d: tracks whether the one-time first-run note has been shown. */
+  notifyOnIdleFirstRunShown: boolean;
 }
 
 const DEFAULTS: StoreData = {
@@ -21,6 +25,8 @@ const DEFAULTS: StoreData = {
   permissionMode: 'bypassPermissions',
   defaultShell: null,
   startupView: 'lastSession',
+  notifyOnIdle: false,
+  notifyOnIdleFirstRunShown: false,
 };
 
 export class SettingsStore {
@@ -88,6 +94,26 @@ export class SettingsStore {
 
   async setStartupView(view: 'lastSession' | 'home'): Promise<void> {
     this.data.startupView = view;
+    await this.save();
+  }
+
+  // M14d: idle notification flag
+  getNotifyOnIdle(): boolean {
+    return this.data.notifyOnIdle;
+  }
+
+  async setNotifyOnIdle(value: boolean): Promise<void> {
+    this.data.notifyOnIdle = value;
+    await this.save();
+  }
+
+  // M14d: one-time first-run note state
+  getNotifyOnIdleFirstRunShown(): boolean {
+    return this.data.notifyOnIdleFirstRunShown;
+  }
+
+  async setNotifyOnIdleFirstRunShown(value: boolean): Promise<void> {
+    this.data.notifyOnIdleFirstRunShown = value;
     await this.save();
   }
 
