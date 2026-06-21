@@ -250,6 +250,14 @@ export interface HomeViewProps {
    * pattern (PLAN-PHASE-2-3.md line 76, PLAN.md 1.8).
    */
   stallInterrupt?: boolean;
+  /**
+   * M17: commitment-mirror intake. When true, a first-open intake panel renders
+   * above the hero at the start of the session. The user can commit to the hero
+   * item or skip. The intake IS the lock-in affordance (PLAN.md 1.9, 1.1): it
+   * lives at first-open ONLY and does NOT add a second persistent button on the
+   * resting hero. Default OFF (false).
+   */
+  commitmentMirror?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -952,6 +960,74 @@ function HorizonCollapse({ items }: HorizonCollapseProps) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// M17: commitment-mirror intake (first-open intake, default OFF, PLAN.md 1.9)
+// ---------------------------------------------------------------------------
+
+interface CommitmentMirrorIntakeProps {
+  /** The current hero item to commit to. */
+  hero: DashboardItem;
+  /** Called when the user confirms commitment to the hero item. */
+  onConfirm: () => void;
+  /** Called when the user skips the intake for this session. */
+  onSkip: () => void;
+}
+
+/**
+ * The commitment-mirror intake panel.
+ *
+ * Shown ONCE per session at first open when the flag is on (PLAN.md 1.9).
+ * The user can commit ("I'll work on this") or skip ("Not today").
+ *
+ * Hard constraints (from the spec):
+ *   - This IS the lock-in affordance. It lives at first-open ONLY.
+ *   - It does NOT add a second persistent button on the resting hero (1.1 budget).
+ *   - The locked hero NEVER uses "still not done" or any time-since-lock language.
+ *   - No streak / chain / "N days" copy anywhere in this component (1.4 / 6.6).
+ *   - No em dashes. No AI-slop words.
+ *
+ * Copy is calm and forward-looking, not a guilt prompt.
+ */
+function CommitmentMirrorIntake({ hero, onConfirm, onSkip }: CommitmentMirrorIntakeProps) {
+  return (
+    <div
+      className="px-6 pt-4 pb-2"
+      data-testid="home-commitment-intake"
+    >
+      <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/30 px-4 py-3">
+        <p className="text-sm text-foreground">
+          What do you want to move forward today?
+        </p>
+        <p
+          className="text-sm font-medium text-foreground"
+          data-testid="home-commitment-hero-name"
+        >
+          {hero.title}
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="secondary"
+            size="sm"
+            data-testid="home-commitment-confirm"
+            onClick={onConfirm}
+          >
+            Yes, pick this up
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            data-testid="home-commitment-skip"
+            onClick={onSkip}
+          >
+            Skip for now
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomeView({
   programBoardState,
   loadStatus,
@@ -972,6 +1048,7 @@ export default function HomeView({
   todos = [],
   onUpdateTodo,
   stallInterrupt = false,
+  commitmentMirror = false,
 }: HomeViewProps) {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -1256,6 +1333,30 @@ export default function HomeView({
   }, [stallInterrupt, stallNotify]);
 
   // -------------------------------------------------------------------------
+  // M17: commitment-mirror intake state (default OFF, intake-only, PLAN.md 1.9).
+  //
+  // The intake renders at first open when the flag is on and there is a hero.
+  // Once the user confirms or skips, intakeDismissed flips to true for the
+  // lifetime of this render tree. The dismissal is session-only (not persisted):
+  // the flag itself (commitmentMirror) controls whether it fires at all on the
+  // next app open. No second persistent button on the resting hero (1.1 budget).
+  // -------------------------------------------------------------------------
+
+  const [intakeDismissed, setIntakeDismissed] = useState(false);
+
+  // The intake is visible only when the flag is on, there is a hero, and the
+  // user has not yet confirmed or skipped this session.
+  const showIntake = commitmentMirror && !!hero && !intakeDismissed;
+
+  const handleIntakeConfirm = useCallback(() => {
+    setIntakeDismissed(true);
+  }, []);
+
+  const handleIntakeSkip = useCallback(() => {
+    setIntakeDismissed(true);
+  }, []);
+
+  // -------------------------------------------------------------------------
   // State selection (4.3 timeline / 4.5 last-good preference)
   // -------------------------------------------------------------------------
 
@@ -1433,6 +1534,17 @@ export default function HomeView({
           columns (PLAN-PHASE-2-3 line 45). */}
       {collapsedHorizonItems.length > 0 && (
         <HorizonCollapse items={collapsedHorizonItems} />
+      )}
+
+      {/* M17: commitment-mirror intake. Renders at first open when the flag is
+          on and a hero exists. Dismisses after confirm or skip. Does NOT add a
+          second persistent button on the resting hero (1.1 budget). */}
+      {showIntake && hero && (
+        <CommitmentMirrorIntake
+          hero={hero}
+          onConfirm={handleIntakeConfirm}
+          onSkip={handleIntakeSkip}
+        />
       )}
 
       {body}

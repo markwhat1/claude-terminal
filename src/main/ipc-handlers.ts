@@ -845,6 +845,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     await settings.setStallInterrupt(value);
   });
 
+  // M17: commitment-mirror intake flag (local-only; not forwarded to remote clients)
+  ipcMain.handle('settings:getCommitmentMirror', async () => {
+    return settings.getCommitmentMirror();
+  });
+
+  ipcMain.handle('settings:setCommitmentMirror', async (_event, value: boolean) => {
+    await settings.setCommitmentMirror(value);
+  });
+
   // ---- Hook Config ----
   ipcMain.handle('hookConfig:load', async (_event, projectId?: string) => {
     const project = projectId ? state.projectManager?.getProject(projectId) : undefined;

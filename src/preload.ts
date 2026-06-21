@@ -109,6 +109,11 @@ const api = {
     ipcRenderer.invoke('settings:getStallInterrupt'),
   setStallInterrupt: (value: boolean): Promise<void> =>
     ipcRenderer.invoke('settings:setStallInterrupt', value),
+  // M17: commitment-mirror intake flag (local-only; not forwarded to remote clients)
+  getCommitmentMirror: (): Promise<boolean> =>
+    ipcRenderer.invoke('settings:getCommitmentMirror'),
+  setCommitmentMirror: (value: boolean): Promise<void> =>
+    ipcRenderer.invoke('settings:setCommitmentMirror', value),
 
   // Hook config
   getHookConfig: (projectId?: string): Promise<RepoHookConfig> =>

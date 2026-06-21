@@ -337,6 +337,9 @@ export class WebSocketBridge {
       // M16 stubs (local-only: stall interrupt is a desktop-only coaching setting)
       getStallInterrupt: async (): Promise<boolean> => false,
       setStallInterrupt: async (_value: boolean): Promise<void> => {},
+      // M17 stubs (local-only: commitment-mirror is a desktop-only coaching setting)
+      getCommitmentMirror: async (): Promise<boolean> => false,
+      setCommitmentMirror: async (_value: boolean): Promise<void> => {},
 
       // M12 stubs. capture:append is remote-enabled in the desktop preload, but
       // the capture store lives in MAIN on the host machine, so a web client has

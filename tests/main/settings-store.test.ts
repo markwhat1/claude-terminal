@@ -160,6 +160,35 @@ describe('SettingsStore', () => {
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getStallInterrupt()).toBe(false);
   });
+
+  // M17: commitmentMirror flag
+  it('returns false as default commitmentMirror', () => {
+    expect(store.getCommitmentMirror()).toBe(false);
+  });
+
+  it('round-trips commitmentMirror true', async () => {
+    await store.setCommitmentMirror(true);
+    expect(store.getCommitmentMirror()).toBe(true);
+  });
+
+  it('round-trips commitmentMirror false after true', async () => {
+    await store.setCommitmentMirror(true);
+    await store.setCommitmentMirror(false);
+    expect(store.getCommitmentMirror()).toBe(false);
+  });
+
+  it('persists commitmentMirror to disk and reloads', async () => {
+    await store.setCommitmentMirror(true);
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getCommitmentMirror()).toBe(true);
+  });
+
+  it('tolerates a missing commitmentMirror key via DEFAULTS merge (defaults to false)', async () => {
+    const fs2 = await import('fs/promises');
+    await fs2.writeFile(tmpFile, JSON.stringify({ recentDirs: [], permissionMode: 'bypassPermissions', defaultShell: null }), 'utf-8');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getCommitmentMirror()).toBe(false);
+  });
 });
 
 describe('SettingsStore sessions', () => {

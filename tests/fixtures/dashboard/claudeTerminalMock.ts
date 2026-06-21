@@ -150,6 +150,9 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   // M16: stall pattern-interrupt flag
   getStallInterrupt: (): Promise<boolean> => Promise.resolve(false),
   setStallInterrupt: (_value: boolean): Promise<void> => Promise.resolve(),
+  // M17: commitment-mirror intake flag
+  getCommitmentMirror: (): Promise<boolean> => Promise.resolve(false),
+  setCommitmentMirror: (_value: boolean): Promise<void> => Promise.resolve(),
 
   // Hook config
   getHookConfig: (_projectId?: string): Promise<RepoHookConfig> =>

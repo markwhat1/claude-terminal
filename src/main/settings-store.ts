@@ -20,6 +20,8 @@ interface StoreData {
   notifyOnIdleFirstRunShown: boolean;
   /** M16: stall pattern-interrupt (in-place pulse, default OFF). */
   stallInterrupt: boolean;
+  /** M17: commitment-mirror intake (first-open intake only, default OFF). */
+  commitmentMirror: boolean;
 }
 
 const DEFAULTS: StoreData = {
@@ -30,6 +32,7 @@ const DEFAULTS: StoreData = {
   notifyOnIdle: false,
   notifyOnIdleFirstRunShown: false,
   stallInterrupt: false,
+  commitmentMirror: false,
 };
 
 export class SettingsStore {
@@ -127,6 +130,16 @@ export class SettingsStore {
 
   async setStallInterrupt(value: boolean): Promise<void> {
     this.data.stallInterrupt = value;
+    await this.save();
+  }
+
+  // M17: commitment-mirror intake flag
+  getCommitmentMirror(): boolean {
+    return this.data.commitmentMirror;
+  }
+
+  async setCommitmentMirror(value: boolean): Promise<void> {
+    this.data.commitmentMirror = value;
     await this.save();
   }
 
