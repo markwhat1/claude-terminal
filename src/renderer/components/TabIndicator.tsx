@@ -12,7 +12,7 @@ export default function TabIndicator({ status }: TabIndicatorProps) {
   switch (status) {
     case 'working':
       return (
-        <span className={cn('inline-flex items-center [&_svg]:size-3 text-warning animate-spin')}>
+        <span className={cn('inline-flex items-center [&_svg]:size-3 text-warning motion-safe:animate-spin')}>
           <Loader2 size={ICON_SIZE} />
         </span>
       );
@@ -24,7 +24,7 @@ export default function TabIndicator({ status }: TabIndicatorProps) {
       );
     case 'requires_response':
       return (
-        <span className={cn('inline-flex items-center [&_svg]:size-3 text-attention animate-pulse')}>
+        <span className={cn('inline-flex items-center [&_svg]:size-3 text-attention motion-safe:animate-pulse')}>
           <MessageCircle size={ICON_SIZE} />
         </span>
       );
