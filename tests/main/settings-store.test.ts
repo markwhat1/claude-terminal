@@ -62,6 +62,21 @@ describe('SettingsStore', () => {
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getRecentDirs()).toContain('D:\\dev\\Persist');
   });
+
+  it('returns tailscale as the default remote transport', () => {
+    expect(store.getRemoteTransport()).toBe('tailscale');
+  });
+
+  it('saves and retrieves the remote transport', async () => {
+    await store.setRemoteTransport('cloudflare');
+    expect(store.getRemoteTransport()).toBe('cloudflare');
+  });
+
+  it('persists the remote transport to disk and reloads', async () => {
+    await store.setRemoteTransport('cloudflare');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getRemoteTransport()).toBe('cloudflare');
+  });
 });
 
 describe('SettingsStore sessions', () => {

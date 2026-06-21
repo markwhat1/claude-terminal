@@ -1,8 +1,29 @@
 # Remote Access
 
-ClaudeTerminal supports remote access to your terminal sessions from any browser or mobile device. A Cloudflare quick tunnel exposes a local HTTP + WebSocket server over HTTPS, and a 6-character access code protects the connection.
+ClaudeTerminal supports remote access to your terminal sessions from any browser or mobile device. A local HTTP + WebSocket server (`WebRemoteServer`) is exposed to remote clients over one of two transports, and a 6-character access code protects the connection.
+
+## Transport Modes
+
+The transport is chosen in the Remote Access dropdown and persisted via the `remoteTransport` setting (`settings:getRemoteTransport` / `settings:setRemoteTransport`). The default is `tailscale`.
+
+| Transport | Public? | How it is reached | cloudflared |
+|---|---|---|---|
+| `tailscale` | No — tailnet only | The loopback server binds the fixed port **8473**. A persistent `tailscale serve` mapping proxies `https://<node>.<tailnet>.ts.net` to `http://127.0.0.1:8473`, reachable only from devices on your tailnet. | Not used |
+| `cloudflare` | Yes — public URL | An ephemeral Cloudflare quick tunnel exposes the loopback server (OS-assigned port) at a public `*.trycloudflare.com` HTTPS URL. | Auto-installed on first use |
+
+In `tailscale` mode the app never starts cloudflared. It binds the fixed port, then reports the node's tailnet URL (resolved from `tailscale status --json` by `src/main/tailscale.ts`) along with the access code. Set the proxy up once on the host:
+
+```
+tailscale serve --bg 8473
+```
+
+Both transports terminate at the same `WebRemoteServer`, so authentication, the message protocol, and the web client are identical regardless of transport. The web client always opens its WebSocket at the same origin it was served from (`ws-bridge.ts`), which is what lets either reverse proxy work without client changes.
 
 ## How It Works
+
+The diagram below shows the Cloudflare path; the Tailscale path is identical except the public quick tunnel is replaced by a private `tailscale serve` proxy to the fixed loopback port.
+
+
 
 ```
 User clicks Remote Access button in tab bar
@@ -40,7 +61,7 @@ The main process (`src/main/index.ts`) listens to these events and forwards `Rem
 
 ## Web Remote Server
 
-`WebRemoteServer` runs an HTTP server for static file serving and a WebSocket server for real-time terminal communication. Both share the same `http.Server` instance on port 3456, bound to `127.0.0.1`.
+`WebRemoteServer` runs an HTTP server for static file serving and a WebSocket server for real-time terminal communication. Both share the same `http.Server` instance bound to `127.0.0.1`. The port is OS-assigned (ephemeral) for the Cloudflare transport, or the fixed port `8473` for the Tailscale transport so a persistent `tailscale serve` mapping has a stable target.
 
 **Dependencies injected at construction**:
 

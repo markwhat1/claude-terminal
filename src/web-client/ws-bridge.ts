@@ -2,7 +2,7 @@
  * WebSocket bridge that implements the same API shape as window.claudeTerminal
  * (from src/preload.ts) but communicates over WebSocket instead of Electron IPC.
  */
-import type { Tab, RemoteAccessInfo, ProjectConfig, WorkspaceConfig } from '../shared/types';
+import type { Tab, RemoteAccessInfo, RemoteTransport, ProjectConfig, WorkspaceConfig } from '../shared/types';
 
 type PtyDataCallback = (tabId: string, data: string) => void;
 type PtyResizedCallback = (tabId: string, cols: number, rows: number) => void;
@@ -346,6 +346,9 @@ export class WebSocketBridge {
       getRemoteAccessInfo: async (): Promise<RemoteAccessInfo> => ({
         status: 'inactive', tunnelUrl: null, token: null, error: null,
       }),
+      // Transport is a host-local setting — the remote client can't change it.
+      getRemoteTransport: async (): Promise<RemoteTransport> => 'cloudflare',
+      setRemoteTransport: async (): Promise<void> => {},
 
       // Open external URLs (browser can just use window.open)
       openExternal: (url: string): void => {

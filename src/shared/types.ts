@@ -77,6 +77,14 @@ export const PERMISSION_FLAGS: Record<PermissionMode, string[]> = {
 // Remote access
 export type RemoteAccessStatus = 'inactive' | 'installing' | 'connecting' | 'active' | 'error';
 
+/**
+ * Transport used to reach the local web-remote server from another machine.
+ * - `cloudflare`: ephemeral public Cloudflare quick tunnel (cloudflared).
+ * - `tailscale`: no public tunnel; the loopback server is reached over the
+ *   private tailnet via `tailscale serve` (or any local reverse proxy).
+ */
+export type RemoteTransport = 'cloudflare' | 'tailscale';
+
 export interface RemoteAccessInfo {
   status: RemoteAccessStatus;
   tunnelUrl: string | null;
@@ -84,6 +92,8 @@ export interface RemoteAccessInfo {
   error: string | null;
   /** Download progress 0–100 (only meaningful when status === 'installing'). */
   progress?: number;
+  /** Which transport produced this state (set once active). */
+  transport?: RemoteTransport;
 }
 
 // --- Repository hooks ---

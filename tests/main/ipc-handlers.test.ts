@@ -133,6 +133,8 @@ function makeMockDeps(): IpcHandlerDeps {
       removeRecentDir: vi.fn(),
       getPermissionMode: vi.fn(() => 'bypassPermissions'),
       saveSessions: vi.fn(),
+      getRemoteTransport: vi.fn(() => 'tailscale'),
+      setRemoteTransport: vi.fn(),
     } as unknown as SettingsStore,
     workspaceStore: {
       listWorkspaces: vi.fn(async () => []),
@@ -189,6 +191,7 @@ describe('registerIpcHandlers', () => {
       'worktree:create', 'worktree:currentBranch', 'worktree:listDetails', 'worktree:remove', 'worktree:checkStatus',
       'hookConfig:load', 'hookConfig:save',
       'settings:recentDirs', 'settings:removeRecentDir', 'settings:permissionMode', 'settings:getDefaultShell', 'settings:setDefaultShell',
+      'settings:getRemoteTransport', 'settings:setRemoteTransport',
       'dialog:selectDirectory', 'cli:getStartDir',
       'remote:activate', 'remote:deactivate', 'remote:getInfo',
       'instance:getHue',
@@ -287,6 +290,20 @@ describe('registerIpcHandlers', () => {
     const result = await handler({});
 
     expect(result).toBe('/some/path');
+  });
+
+  it('settings:getRemoteTransport returns the stored transport', async () => {
+    const handler = handlers.get('settings:getRemoteTransport')!;
+    const result = await handler({});
+
+    expect(result).toBe('tailscale');
+  });
+
+  it('settings:setRemoteTransport persists the transport', async () => {
+    const handler = handlers.get('settings:setRemoteTransport')!;
+    await handler({}, 'cloudflare');
+
+    expect(deps.settings.setRemoteTransport).toHaveBeenCalledWith('cloudflare');
   });
 
   it('registers pty:pause and pty:resume listeners', () => {

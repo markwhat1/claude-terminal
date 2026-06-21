@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { app } from 'electron';
-import { PermissionMode, SavedTab } from '@shared/types';
+import { PermissionMode, RemoteTransport, SavedTab } from '@shared/types';
 import { log } from './logger';
 
 const MAX_RECENT_DIRS = 10;
@@ -13,12 +13,14 @@ interface StoreData {
   recentDirs: string[];
   permissionMode: PermissionMode;
   defaultShell: string | null;
+  remoteTransport: RemoteTransport;
 }
 
 const DEFAULTS: StoreData = {
   recentDirs: [],
   permissionMode: 'bypassPermissions',
   defaultShell: null,
+  remoteTransport: 'tailscale',
 };
 
 export class SettingsStore {
@@ -77,6 +79,15 @@ export class SettingsStore {
 
   async setDefaultShell(shellId: string | null): Promise<void> {
     this.data.defaultShell = shellId;
+    await this.save();
+  }
+
+  getRemoteTransport(): RemoteTransport {
+    return this.data.remoteTransport;
+  }
+
+  async setRemoteTransport(transport: RemoteTransport): Promise<void> {
+    this.data.remoteTransport = transport;
     await this.save();
   }
 
