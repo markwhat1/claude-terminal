@@ -218,6 +218,35 @@ describe('SettingsStore', () => {
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getMorningRitual()).toBe(false);
   });
+
+  // M19: offAppNudge flag (the off-app batched nudge, opt-in, default OFF)
+  it('returns false as default offAppNudge', () => {
+    expect(store.getOffAppNudge()).toBe(false);
+  });
+
+  it('round-trips offAppNudge true', async () => {
+    await store.setOffAppNudge(true);
+    expect(store.getOffAppNudge()).toBe(true);
+  });
+
+  it('round-trips offAppNudge false after true', async () => {
+    await store.setOffAppNudge(true);
+    await store.setOffAppNudge(false);
+    expect(store.getOffAppNudge()).toBe(false);
+  });
+
+  it('persists offAppNudge to disk and reloads', async () => {
+    await store.setOffAppNudge(true);
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getOffAppNudge()).toBe(true);
+  });
+
+  it('tolerates a missing offAppNudge key via DEFAULTS merge (defaults to false)', async () => {
+    const fs2 = await import('fs/promises');
+    await fs2.writeFile(tmpFile, JSON.stringify({ recentDirs: [], permissionMode: 'bypassPermissions', defaultShell: null }), 'utf-8');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getOffAppNudge()).toBe(false);
+  });
 });
 
 describe('SettingsStore sessions', () => {

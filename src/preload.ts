@@ -119,6 +119,11 @@ const api = {
     ipcRenderer.invoke('settings:getMorningRitual'),
   setMorningRitual: (value: boolean): Promise<void> =>
     ipcRenderer.invoke('settings:setMorningRitual', value),
+  // M19: off-app batched nudge flag (local-only; not forwarded to remote clients)
+  getOffAppNudge: (): Promise<boolean> =>
+    ipcRenderer.invoke('settings:getOffAppNudge'),
+  setOffAppNudge: (value: boolean): Promise<void> =>
+    ipcRenderer.invoke('settings:setOffAppNudge', value),
 
   // Hook config
   getHookConfig: (projectId?: string): Promise<RepoHookConfig> =>

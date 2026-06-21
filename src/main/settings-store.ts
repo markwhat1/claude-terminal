@@ -24,6 +24,8 @@ interface StoreData {
   commitmentMirror: boolean;
   /** M18: morning ritual + parking (cue-bound to first open, default OFF). */
   morningRitual: boolean;
+  /** M19: off-app batched nudge (opt-in, default OFF; sends only when also scheduled). */
+  offAppNudge: boolean;
 }
 
 const DEFAULTS: StoreData = {
@@ -36,6 +38,7 @@ const DEFAULTS: StoreData = {
   stallInterrupt: false,
   commitmentMirror: false,
   morningRitual: false,
+  offAppNudge: false,
 };
 
 export class SettingsStore {
@@ -153,6 +156,16 @@ export class SettingsStore {
 
   async setMorningRitual(value: boolean): Promise<void> {
     this.data.morningRitual = value;
+    await this.save();
+  }
+
+  // M19: off-app batched nudge flag (opt-in; sends only when also scheduled)
+  getOffAppNudge(): boolean {
+    return this.data.offAppNudge;
+  }
+
+  async setOffAppNudge(value: boolean): Promise<void> {
+    this.data.offAppNudge = value;
     await this.save();
   }
 

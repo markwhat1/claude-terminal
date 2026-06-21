@@ -343,6 +343,9 @@ export class WebSocketBridge {
       // M18 stubs (local-only: morning ritual + parking is a desktop-only coaching setting)
       getMorningRitual: async (): Promise<boolean> => false,
       setMorningRitual: async (_value: boolean): Promise<void> => {},
+      // M19 stubs (local-only: the off-app nudge is a desktop notification setting)
+      getOffAppNudge: async (): Promise<boolean> => false,
+      setOffAppNudge: async (_value: boolean): Promise<void> => {},
 
       // M12 stubs. capture:append is remote-enabled in the desktop preload, but
       // the capture store lives in MAIN on the host machine, so a web client has

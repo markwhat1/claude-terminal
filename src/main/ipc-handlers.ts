@@ -863,6 +863,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     await settings.setMorningRitual(value);
   });
 
+  // M19: off-app batched nudge flag (opt-in, default OFF). Local-only: the flag
+  // is a desktop notification preference, absent from REMOTE_FORWARDED_CHANNELS,
+  // so a remote client cannot read or flip it. The nudge itself fires only when
+  // the flag is on AND a separate schedule is confirmed (shared/off-app-nudge.ts).
+  ipcMain.handle('settings:getOffAppNudge', async () => {
+    return settings.getOffAppNudge();
+  });
+
+  ipcMain.handle('settings:setOffAppNudge', async (_event, value: boolean) => {
+    await settings.setOffAppNudge(value);
+  });
+
   // ---- Hook Config ----
   ipcMain.handle('hookConfig:load', async (_event, projectId?: string) => {
     const project = projectId ? state.projectManager?.getProject(projectId) : undefined;

@@ -122,3 +122,84 @@ describe('generateTabName', () => {
     expect(deps.tabManager.rename).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// M19 / R-14: the tab-namer gate for dashboard-injected tabs
+//
+// When the free-text query opt-in is enabled, a dashboard-injected tab's namer
+// prompt must NOT reach Haiku unscrubbed. The wiring suppresses the namer call
+// entirely for those tabs. These tests assert the gate at the namer seam: a
+// suppressed tab never spawns the Haiku subprocess (no execFile, no stdin write).
+// ---------------------------------------------------------------------------
+
+describe('generateTabName -- R-14 dashboard-injected gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecFile.mockImplementation((...args: any[]) => {
+      const cb = args[args.length - 1];
+      if (typeof cb === 'function') {
+        setTimeout(() => cb(null, '  Fix Auth Bug  ', ''), 0);
+      }
+      return mockChild;
+    });
+  });
+
+  it('suppresses the Haiku call for a dashboard-injected tab when the opt-in is ON', async () => {
+    const deps = makeMockDeps();
+    const { generateTabName } = createTabNamer({
+      ...deps,
+      isDashboardInjectedTab: (id) => id === 'tab-dash',
+      isFreeTextOptInEnabled: () => true,
+    });
+
+    generateTabName('tab-dash', 'Draft the portal note for patient 303-986-9337');
+    await new Promise((r) => setTimeout(r, 50));
+
+    // No Haiku subprocess: the free text never reached the LLM.
+    expect(mockExecFile).not.toHaveBeenCalled();
+    expect(mockStdin.write).not.toHaveBeenCalled();
+    expect(deps.tabManager.rename).not.toHaveBeenCalled();
+  });
+
+  it('does NOT suppress a dashboard-injected tab when the opt-in is OFF (the shipped state)', async () => {
+    const deps = makeMockDeps();
+    const { generateTabName } = createTabNamer({
+      ...deps,
+      isDashboardInjectedTab: (id) => id === 'tab-dash',
+      isFreeTextOptInEnabled: () => false,
+    });
+
+    generateTabName('tab-dash', 'Review the open TODOs in this repo.');
+    await new Promise((r) => setTimeout(r, 50));
+
+    // The canned query is PHI-free, so the namer runs as it does today.
+    expect(mockExecFile).toHaveBeenCalled();
+    expect(mockStdin.write).toHaveBeenCalled();
+  });
+
+  it('does NOT suppress an ordinary (non-dashboard) tab even when the opt-in is ON', async () => {
+    const deps = makeMockDeps();
+    const { generateTabName } = createTabNamer({
+      ...deps,
+      isDashboardInjectedTab: () => false,
+      isFreeTextOptInEnabled: () => true,
+    });
+
+    generateTabName('tab-ordinary', 'Fix the auth bug');
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockExecFile).toHaveBeenCalled();
+    expect(mockStdin.write).toHaveBeenCalled();
+  });
+
+  it('runs the namer normally when the gate deps are absent (backward compatible)', async () => {
+    const deps = makeMockDeps();
+    const { generateTabName } = createTabNamer(deps);
+
+    generateTabName('tab-1', 'Hello world');
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockExecFile).toHaveBeenCalled();
+    expect(mockStdin.write).toHaveBeenCalled();
+  });
+});

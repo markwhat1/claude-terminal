@@ -90,6 +90,33 @@ describe('QueryInjector', () => {
   });
 
   // -------------------------------------------------------------------------
+  // M19 / R-14: isDashboardInjected outlives the pending entry
+  // -------------------------------------------------------------------------
+
+  it('isDashboardInjected is false for a tab that was never armed', () => {
+    expect(injector.isDashboardInjected('tab-never')).toBe(false);
+  });
+
+  it('isDashboardInjected is true once a tab is armed', () => {
+    injector.arm('tab-1', QUERY);
+    expect(injector.isDashboardInjected('tab-1')).toBe(true);
+  });
+
+  it('isDashboardInjected stays true AFTER the query is written (lastQuery remembrance)', () => {
+    injector.arm('tab-1', QUERY);
+    injector.onIdle('tab-1'); // writes + cancels the pending timer
+    // The pending entry no longer drives a write, but the tab is still a
+    // dashboard-injected tab for the namer gate (the name event fires later).
+    expect(injector.isDashboardInjected('tab-1')).toBe(true);
+  });
+
+  it('isDashboardInjected stays true after clear (so a late name event is still gated)', () => {
+    injector.arm('tab-1', QUERY);
+    injector.clear('tab-1');
+    expect(injector.isDashboardInjected('tab-1')).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
   // the idle gate: exactly one write with a trailing \r
   // -------------------------------------------------------------------------
 

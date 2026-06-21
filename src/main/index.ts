@@ -76,6 +76,7 @@ import { TunnelManager } from './tunnel-manager';
 import { WebRemoteServer } from './web-remote-server';
 import type { RemoteAccessInfo } from '@shared/types';
 import { isAllowedExternalScheme } from '@shared/url-scheme';
+import { FREE_TEXT_QUERY_ENABLED } from '@shared/free-text-query';
 import { log } from './logger';
 import { checkForUpdate, registerUpdateHandlers } from './update-checker';
 
@@ -289,18 +290,28 @@ async function deactivateRemoteAccess(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Wire up extracted modules
 // ---------------------------------------------------------------------------
-const { generateTabName, generateResumeTabName, cleanupNamingFlag } = createTabNamer({
-  tabManager, sendToRenderer, persistSessions,
-});
-
 // M10c: the single QueryInjector instance owns the pending-injection state. It is
 // injected into BOTH the ipc-handlers (the claude:injectQuery handler arms it) and
 // the hook-router (the idle gate clears it). The injectStatus broadcast is sent
 // via sendToRenderer, which does NOT forward it to remote clients (the channel is
 // absent from REMOTE_FORWARDED_CHANNELS), so the feed stays desktop-only.
+//
+// Created BEFORE the tab-namer so the namer's R-14 gate (M19) can ask the
+// injector whether a tab is dashboard-injected.
 const queryInjector = new QueryInjector({
   ptyManager,
   sendStatus: (channel, status) => sendToRenderer(channel, status),
+});
+
+const { generateTabName, generateResumeTabName, cleanupNamingFlag } = createTabNamer({
+  tabManager, sendToRenderer, persistSessions,
+  // M19 / R-14: a tab is dashboard-injected when the QueryInjector has ever armed
+  // it. The free-text opt-in is OFF (FREE_TEXT_QUERY_ENABLED is false in the
+  // shipped build), so the gate is inert today; when a future milestone enables
+  // free text, this wiring suppresses the namer for dashboard-injected tabs so
+  // the injected specificity never reaches Haiku unscrubbed.
+  isDashboardInjectedTab: (tabId: string) => queryInjector.isDashboardInjected(tabId),
+  isFreeTextOptInEnabled: () => FREE_TEXT_QUERY_ENABLED,
 });
 
 const { handleHookMessage, clearPendingNotification } = createHookRouter({

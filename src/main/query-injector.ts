@@ -98,6 +98,19 @@ export class QueryInjector {
   }
 
   /**
+   * M19 / R-14: true when this tab was spawned by the dashboard injection path,
+   * i.e. it has ever been armed. Stays true after the pending entry is cleared
+   * (the lastQuery remembrance outlives the write) so a tab:generate-name event
+   * that fires AFTER the canned query is written is still recognized as a
+   * dashboard-injected tab and gated. The dashboard auto-names a fresh tab per
+   * injection, so this is the durable "is this a dashboard tab" signal the
+   * tab-namer needs to apply the R-14 gate.
+   */
+  isDashboardInjected(tabId: string): boolean {
+    return this.pending.has(tabId) || this.lastQuery.has(tabId);
+  }
+
+  /**
    * The idle gate. Called by the hook-router at the convergence point (the
    * tab:updated emission where updated.status === 'idle', covering BOTH the
    * tab:ready first idle and the later tab:status:idle). On the FIRST idle for a

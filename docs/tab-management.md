@@ -216,6 +216,8 @@ ClaudeTerminal - D:\project (main) [Idle]         // all tabs idle
 
 A flag file at `${TMPDIR}/claude-terminal-named-${tabId}` prevents re-naming on subsequent prompts. The flag is checked by the `on-prompt-submit.js` hook script. When the user runs `/clear`, the flag is deleted and the tab name resets to the default, allowing the next prompt to trigger a new name.
 
+**M19 / R-14 gate for dashboard-injected tabs.** The auto-namer ships the first 500 prompt characters to Haiku, which is more free text than the dashboard's canned query path carries. Today the dashboard injects only canned, PHI-free queries, so a dashboard-spawned tab name is safe. If the disabled-by-default free-text query opt-in (`FREE_TEXT_QUERY_ENABLED` in `src/shared/free-text-query.ts`) is ever enabled, the injected specificity must not reach Haiku unscrubbed. `generateTabName` therefore consults `resolveDashboardTabNamerPrompt` (`src/shared/tab-namer-gate.ts`): for a tab the `QueryInjector` has armed (a dashboard-injected tab), when the opt-in is on, auto-naming is suppressed entirely so no Haiku call fires. With the opt-in off (the shipped state) the gate is inert and naming runs as before. The gate ships with the opt-in, so enabling free text cannot leak past the namer.
+
 Tabs restored with a saved name have the flag pre-created to prevent overwriting the saved name.
 
 ### Drag-and-Drop Reorder

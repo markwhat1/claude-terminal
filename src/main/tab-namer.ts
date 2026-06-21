@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { getClaudeCommand } from '@shared/claude-cli';
+import { resolveDashboardTabNamerPrompt } from '@shared/tab-namer-gate';
+import { FREE_TEXT_QUERY_ENABLED } from '@shared/free-text-query';
 import { log } from './logger';
 import type { TabManager } from './tab-manager';
 
@@ -11,6 +13,23 @@ export interface TabNamerDeps {
   tabManager: TabManager;
   sendToRenderer: (channel: string, ...args: unknown[]) => void;
   persistSessions: () => void;
+  /**
+   * M19 / R-14: returns true when this tab was spawned by the dashboard
+   * injection path (claude:injectQuery). The tab-namer ships prompt.substring
+   * (0,500) to Haiku for every auto-named tab; if the free-text query opt-in is
+   * ever enabled, the dod.gaps[0] specificity it injects must NOT reach Haiku
+   * unscrubbed for a dashboard-injected tab. Optional: absent means no tab is
+   * treated as dashboard-injected (the gate is inert), which is correct while
+   * the opt-in is off and nothing free-text is injected.
+   */
+  isDashboardInjectedTab?: (tabId: string) => boolean;
+  /**
+   * M19 / R-14: returns the current free-text query opt-in state. The gate is
+   * ARMED only by this flag, so with the opt-in off the namer behaves exactly as
+   * before. Optional: absent falls back to the shipped FREE_TEXT_QUERY_ENABLED
+   * constant (false).
+   */
+  isFreeTextOptInEnabled?: () => boolean;
 }
 
 export function createTabNamer(deps: TabNamerDeps) {
@@ -72,7 +91,29 @@ export function createTabNamer(deps: TabNamerDeps) {
   function generateTabName(tabId: string, prompt: string) {
     // Log tab id only; prompt text may contain PHI
     log.debug('[generateTabName] starting for tab', tabId);
-    const namePrompt = `Generate a short tab title (3-5 words) for a coding conversation that starts with this message. Reply with ONLY the title, no quotes, no punctuation:\n\n${prompt.substring(0, 500)}`;
+
+    // M19 / R-14: gate the namer for dashboard-injected tabs when the free-text
+    // query opt-in is enabled. With the opt-in on, the dod.gaps[0] free text the
+    // dashboard would inject must not reach Haiku unscrubbed; the gate suppresses
+    // auto-naming for those tabs entirely. With the opt-in off (the shipped
+    // state) the gate is inert and the namer runs as before.
+    const isDashboardInjected = deps.isDashboardInjectedTab
+      ? deps.isDashboardInjectedTab(tabId)
+      : false;
+    const freeTextOptInEnabled = deps.isFreeTextOptInEnabled
+      ? deps.isFreeTextOptInEnabled()
+      : FREE_TEXT_QUERY_ENABLED;
+    const gate = resolveDashboardTabNamerPrompt({
+      rawPrompt: prompt,
+      isDashboardInjected,
+      freeTextOptInEnabled,
+    });
+    if (gate.suppress) {
+      log.debug('[generateTabName] suppressed for dashboard-injected tab (R-14)', tabId);
+      return;
+    }
+
+    const namePrompt = `Generate a short tab title (3-5 words) for a coding conversation that starts with this message. Reply with ONLY the title, no quotes, no punctuation:\n\n${(gate.prompt ?? prompt).substring(0, 500)}`;
     callHaikuForName(tabId, namePrompt);
   }
 
