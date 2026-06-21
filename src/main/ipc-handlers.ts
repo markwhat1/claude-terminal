@@ -854,6 +854,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     await settings.setCommitmentMirror(value);
   });
 
+  // M18: morning ritual + parking flag (local-only; not forwarded to remote clients)
+  ipcMain.handle('settings:getMorningRitual', async () => {
+    return settings.getMorningRitual();
+  });
+
+  ipcMain.handle('settings:setMorningRitual', async (_event, value: boolean) => {
+    await settings.setMorningRitual(value);
+  });
+
   // ---- Hook Config ----
   ipcMain.handle('hookConfig:load', async (_event, projectId?: string) => {
     const project = projectId ? state.projectManager?.getProject(projectId) : undefined;

@@ -232,6 +232,8 @@ The channel-name constants `CLAUDE_INJECT_QUERY_CHANNEL` and `CLAUDE_INJECT_STAT
 
 `todo:update` is the M15 mutation channel for horizon assign, park, and done. The patch carries only structured fields (`horizon`, `category`, `project`, `parkedUntil`, `doneAt`); the item text is never modified. The main handler calls `updateTodo` (which validates the id, finds the item, applies the patch, and atomic-writes the store). The channel is **local-only** (Home is desktop-only, PLAN.md 2.9); the `ws-bridge` stub throws so a missed disabled-state fails loudly. The channel constant `TODO_UPDATE_CHANNEL` lives in `src/shared/capture.ts`. Not in `REMOTE_FORWARDED_CHANNELS`.
 
+M18 reuses this same `todo:update` channel for resurfacing/parking and the morning ritual: the hero-todo "not now" duration set writes a future `parkedUntil` (a parked item is hidden, never deleted, and resurfaces when `parkedUntil <= now` on the next open or the ~20s tick), and the hero-todo "Done" writes `doneAt`. No new mutation channel is added; the deliberate remote decision is unchanged (local-only, no `ws-bridge` write path). The morning-ritual ON/OFF preference is the `settings:getMorningRitual` / `settings:setMorningRitual` pair (local-only settings, default OFF, mirroring `notifyOnIdle`); like the other coaching flags it is not a broadcast and is stubbed in `ws-bridge`.
+
 ### Git
 
 | Channel | Direction | Pattern | Renderer Signature | Payload |

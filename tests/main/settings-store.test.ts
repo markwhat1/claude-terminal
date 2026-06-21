@@ -189,6 +189,35 @@ describe('SettingsStore', () => {
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getCommitmentMirror()).toBe(false);
   });
+
+  // M18: morningRitual flag (default OFF, cue-bound to first open)
+  it('returns false as default morningRitual', () => {
+    expect(store.getMorningRitual()).toBe(false);
+  });
+
+  it('round-trips morningRitual true', async () => {
+    await store.setMorningRitual(true);
+    expect(store.getMorningRitual()).toBe(true);
+  });
+
+  it('round-trips morningRitual false after true', async () => {
+    await store.setMorningRitual(true);
+    await store.setMorningRitual(false);
+    expect(store.getMorningRitual()).toBe(false);
+  });
+
+  it('persists morningRitual to disk and reloads', async () => {
+    await store.setMorningRitual(true);
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getMorningRitual()).toBe(true);
+  });
+
+  it('tolerates a missing morningRitual key via DEFAULTS merge (defaults to false)', async () => {
+    const fs2 = await import('fs/promises');
+    await fs2.writeFile(tmpFile, JSON.stringify({ recentDirs: [], permissionMode: 'bypassPermissions', defaultShell: null }), 'utf-8');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getMorningRitual()).toBe(false);
+  });
 });
 
 describe('SettingsStore sessions', () => {

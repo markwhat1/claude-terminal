@@ -114,6 +114,11 @@ const api = {
     ipcRenderer.invoke('settings:getCommitmentMirror'),
   setCommitmentMirror: (value: boolean): Promise<void> =>
     ipcRenderer.invoke('settings:setCommitmentMirror', value),
+  // M18: morning ritual + parking flag (local-only; not forwarded to remote clients)
+  getMorningRitual: (): Promise<boolean> =>
+    ipcRenderer.invoke('settings:getMorningRitual'),
+  setMorningRitual: (value: boolean): Promise<void> =>
+    ipcRenderer.invoke('settings:setMorningRitual', value),
 
   // Hook config
   getHookConfig: (projectId?: string): Promise<RepoHookConfig> =>

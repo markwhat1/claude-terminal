@@ -67,6 +67,13 @@ import {
 } from '@shared/hero-reroll';
 import { matchKeybinding } from '@/keybindings';
 import { useStallInterrupt } from '@shared/stall-interrupt';
+import {
+  parkDurations,
+  resurfacedNowTodos,
+  todoToDashboardItem,
+  morningClosedCount,
+  morningCountLine,
+} from '@shared/morning-ritual';
 
 // ---------------------------------------------------------------------------
 // Idle-floor constant (M8b-iii, 5.2)
@@ -258,6 +265,22 @@ export interface HomeViewProps {
    * resting hero. Default OFF (false).
    */
   commitmentMirror?: boolean;
+  /**
+   * M18: morning ritual + parking. When true, a first-open morning-ritual surface
+   * renders where parked-and-resurfaced @now items get retriaged and the rolling
+   * last-24h completion count shows momentum. CUE-BOUND to first-open (the same
+   * app-open cue Phase 1 uses), DEFAULT OFF (PLAN-PHASE-2-3.md line 78, PLAN.md
+   * 1.5 / 1.10). The completion surface carries the three Phase-1 honesty guards
+   * (suppressed-when-zero, rolling-24h not midnight-reset, no streak language).
+   */
+  morningRitual?: boolean;
+  /**
+   * M18: the ids of todos that were just completed this session, used to render
+   * the motion-safe completion settle row (the row settles, the next Tier-5 item
+   * slides up, the count ticks). App owns this transient list; HomeView only
+   * renders the settle beat. Optional; defaults to []. No confetti, no streaks.
+   */
+  recentTodoCloses?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1028,6 +1051,238 @@ function CommitmentMirrorIntake({ hero, onConfirm, onSkip }: CommitmentMirrorInt
   );
 }
 
+// ---------------------------------------------------------------------------
+// M18: the captured @now todo hero (Tier-5 surface, PLAN-PHASE-2-3.md 63-71)
+// ---------------------------------------------------------------------------
+
+interface TodoHeroProps {
+  /** The Tier-5 todo DashboardItem (item.slug is the todo id). */
+  item: DashboardItem;
+  /** The small park duration set (today / this week / next week), all future. */
+  durations: { today: number; thisWeek: number; nextWeek: number };
+  /** Mark the todo done (sets doneAt). The next Tier-5 item then slides up. */
+  onDone: (id: string) => void;
+  /** Park the todo to a future timestamp (hidden, not deleted). */
+  onPark: (id: string, parkedUntil: number) => void;
+  /** Copy the inert display text. */
+  onCopy: (text: string) => void;
+}
+
+/**
+ * The captured @now todo as the hero. A captured todo is DISPLAY-ONLY (PLAN.md
+ * 1.7): no Claude-injection primary, no shell opener. Its affordances are Done
+ * (completion), a one-tap park duration set ("not now"), and Copy.
+ *
+ * Park is one-tap with a small set (today / this week / next week). The set is
+ * disclosed behind a single "not now" control so the resting hero stays calm
+ * (1.1 affordance budget), then collapses after a choice.
+ *
+ * No confetti, no streaks. The completion settle beat is rendered separately by
+ * HomeView from recentTodoCloses so the row can fade after doneAt is persisted.
+ */
+function TodoHero({ item, durations, onDone, onPark, onCopy }: TodoHeroProps) {
+  const todoId = item.slug;
+  const [parkOpen, setParkOpen] = useState(false);
+
+  return (
+    <Card className={cn('border-l-4 gap-4 py-6', HERO_MIN_HEIGHT, 'border-success')} data-testid="home-todo-hero">
+      <CardHeader>
+        <CardTitle className="text-xl font-semibold text-foreground" data-testid="home-todo-hero-title">
+          {item.title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        <p className="text-sm text-muted-foreground">One thing you captured. Pick it up, or set it aside.</p>
+      </CardContent>
+      <CardFooter className="gap-2 flex-wrap">
+        <Button
+          className="bg-attention text-attention-foreground hover:bg-attention/90"
+          data-testid="home-todo-done"
+          onClick={() => onDone(todoId)}
+        >
+          Done
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground"
+          data-testid="home-todo-park-open"
+          onClick={() => setParkOpen((v) => !v)}
+        >
+          Not now
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="home-todo-copy"
+          onClick={() => onCopy(item.title)}
+        >
+          Copy
+        </Button>
+        {parkOpen && (
+          <div className="flex items-center gap-2 flex-wrap" data-testid="home-todo-park-set">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              data-testid="home-todo-park-today"
+              onClick={() => onPark(todoId, durations.today)}
+            >
+              Today
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              data-testid="home-todo-park-this-week"
+              onClick={() => onPark(todoId, durations.thisWeek)}
+            >
+              This week
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              data-testid="home-todo-park-next-week"
+              onClick={() => onPark(todoId, durations.nextWeek)}
+            >
+              Next week
+            </Button>
+          </div>
+        )}
+      </CardFooter>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// M18: the completion settle row (the row settles, motion-safe, no confetti)
+// ---------------------------------------------------------------------------
+
+interface TodoSettleRowProps {
+  /** The just-completed todo text to acknowledge in the settle beat. */
+  text: string;
+  /** True when prefers-reduced-motion is active; suppresses the animation class. */
+  reducedMotion: boolean;
+}
+
+/**
+ * The motion-safe settle row for a just-completed todo. The class is the same
+ * opacity-only settle-ordinary ease the done-lane uses (no layout mutation, no
+ * confetti, no streak). Under reduced motion the class is dropped (the row still
+ * renders; only the animation is suppressed).
+ */
+function TodoSettleRow({ text, reducedMotion }: TodoSettleRowProps) {
+  return (
+    <div
+      className={cn('px-6 py-1 text-sm text-muted-foreground', !reducedMotion && 'settle-ordinary')}
+      data-testid="home-todo-settle"
+    >
+      {`Finished: ${text}`}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// M18: the morning ritual (cue-bound to first-open, default OFF)
+// ---------------------------------------------------------------------------
+
+interface MorningRitualProps {
+  /** The rolling last-24h completion count for the honest momentum line. */
+  closedCount: number;
+  /** The next item to retriage this morning (a resurfaced/parked or untriaged
+   *  todo), or null when there is nothing to retriage. */
+  retriageItem: TodoItem | null;
+  /** Assign a horizon to the retriage item. */
+  onAssign: (id: string, horizon: 'now' | 'next' | 'later') => void;
+  /** Park the retriage item (one-tap, this-week default). */
+  onPark: (id: string) => void;
+  /** Finish the ritual for this session (it dismisses, cue-bound not persistent). */
+  onDone: () => void;
+}
+
+/**
+ * The morning ritual surface (PLAN-PHASE-2-3.md line 78, PLAN.md 1.9 expanded).
+ *
+ * Cue-bound to first-open (the same app-open cue Phase 1 uses), default OFF. It
+ * is where parked-and-resurfaced items get retriaged, and it carries the rolling
+ * last-24h completion count.
+ *
+ * The three honesty guards (PLAN-PHASE-2-3.md lines 69-71) live in this surface:
+ *   1. SUPPRESSED-WHEN-ZERO: morningCountLine returns forward framing at zero,
+ *      never a bare "0 done" fraction.
+ *   2. ROLLING last-24h, NOT a midnight reset: the line reads "last 24h" so the
+ *      cue opens on momentum, never "today" at 9am over a 24h window.
+ *   3. NO streak / chain / "in a row" / "N days" language, and no bare-zero
+ *      fraction. No em dashes, no AI-slop words.
+ */
+function MorningRitual({ closedCount, retriageItem, onAssign, onPark, onDone }: MorningRitualProps) {
+  return (
+    <div className="px-6 pt-4 pb-2" data-testid="home-morning-ritual">
+      <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/30 px-4 py-3">
+        <p className="text-sm text-foreground">Good to see you. Here is where things stand.</p>
+        <span className="text-sm text-muted-foreground" data-testid="home-morning-closed-count">
+          {morningCountLine(closedCount)}
+        </span>
+
+        {retriageItem && (
+          <div className="flex flex-col gap-2" data-testid="home-morning-retriage">
+            <span className="text-sm text-foreground" data-testid="home-morning-retriage-text">
+              {retriageItem.text}
+            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="home-morning-assign-now"
+                onClick={() => onAssign(retriageItem.id, 'now')}
+              >
+                @now
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="home-morning-assign-next"
+                onClick={() => onAssign(retriageItem.id, 'next')}
+              >
+                @next
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="home-morning-assign-later"
+                onClick={() => onAssign(retriageItem.id, 'later')}
+              >
+                @later
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                data-testid="home-morning-park"
+                onClick={() => onPark(retriageItem.id)}
+              >
+                Not now
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            data-testid="home-morning-ritual-done"
+            onClick={onDone}
+          >
+            Start the day
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomeView({
   programBoardState,
   loadStatus,
@@ -1049,6 +1304,8 @@ export default function HomeView({
   onUpdateTodo,
   stallInterrupt = false,
   commitmentMirror = false,
+  morningRitual = false,
+  recentTodoCloses = [],
 }: HomeViewProps) {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -1092,6 +1349,30 @@ export default function HomeView({
 
   const closeCapture = useCallback(() => setCaptureOpen(false), []);
 
+  // -------------------------------------------------------------------------
+  // M18: the resurfacing clock.
+  //
+  // Parking hides a todo while parkedUntil > now; it resurfaces when
+  // parkedUntil <= now. Resurfacing must happen on each Home OPEN and on the
+  // ~20s poll tick (PLAN-PHASE-2-3.md line 65), so a parked item comes back
+  // without the user touching anything. The `now` PROP is fixed at the parent's
+  // render, so HomeView keeps its own clock that advances every ~20s. The
+  // effective clock used for resurfacing is the later of the prop clock and the
+  // internal tick clock, so a parent re-render that supplies a newer `now` never
+  // moves the clock backward.
+  // -------------------------------------------------------------------------
+  const RESURFACE_TICK_MS = 20_000;
+  const [tickNow, setTickNow] = useState<number>(now.getTime());
+  useEffect(() => {
+    const id = setInterval(() => setTickNow(Date.now()), RESURFACE_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+  // The effective resurfacing clock: never older than the prop clock.
+  const resurfaceNow = useMemo(
+    () => new Date(Math.max(now.getTime(), tickNow)),
+    [now, tickNow],
+  );
+
   // Loss-aversion guard (1.5): the displayed closedRecent is frozen to the
   // session-high so 24h pruning never decrements it mid-session. The reader
   // already provides a frozen value, but we add a second layer here so
@@ -1130,10 +1411,22 @@ export default function HomeView({
   // tabs. Paused board cards are excluded here (they fold into "N paused").
   // idleNeedsYou tabs are never paused (tabToItem sets paused:false).
   // This set feeds BOTH the hero and the "N need you" count (4.6 invariant).
+  // Captured @now todos are NOT in this set: they are Tier-5 hero candidates but
+  // never inflate the program-board "N need you" glance count (4.6).
   const unifiedCandidates: DashboardItem[] = useMemo(() => {
     const boardNeedsYou = boardItems.filter((i) => i.needsYou && !i.paused);
     return [...boardNeedsYou, ...idleTabItems];
   }, [boardItems, idleTabItems]);
+
+  // M18: the resurfaced @now todo candidates (Tier 5). resurfacedNowTodos hides
+  // a still-parked todo and surfaces one whose parkedUntil has crossed the
+  // resurfacing clock, so a parked item comes back on the next open / tick
+  // (PLAN-PHASE-2-3.md lines 63-65). These map to Tier-5 DashboardItems the
+  // ranker already understands.
+  const todoCandidates: DashboardItem[] = useMemo(
+    () => resurfacedNowTodos(todos, resurfaceNow).map(todoToDashboardItem),
+    [todos, resurfaceNow],
+  );
 
   // items is still needed for paused count and pull-forward candidate (both
   // consume the full board list, not the unified set).
@@ -1167,10 +1460,12 @@ export default function HomeView({
   });
 
   // The deterministic ranked list for this poll tick. Paused items already land
-  // in Tier 6 inside rankItems, so they do not appear as the hero.
+  // in Tier 6 inside rankItems, so they do not appear as the hero. M18: the
+  // resurfaced @now todo candidates join the ranking input so a Tier-5 todo can
+  // become the hero when no higher-tier program card is waiting.
   const rankedItems = useMemo(
-    () => rankItems(unifiedCandidates, now),
-    [unifiedCandidates, now],
+    () => rankItems([...unifiedCandidates, ...todoCandidates], now),
+    [unifiedCandidates, todoCandidates, now],
   );
 
   // Apply the per-day re-roll on top of the deterministic order (1.6 / M11).
@@ -1282,6 +1577,34 @@ export default function HomeView({
     [onUpdateTodo, now],
   );
 
+  // -------------------------------------------------------------------------
+  // M18: hero-todo completion + parking handlers.
+  //
+  // Done sets doneAt (the completion mutation, via the existing todo:update
+  // channel). The next Tier-5 todo then slides up because resurfacedNowTodos
+  // drops doneAt-set items, so the parent's next state no longer ranks it.
+  //
+  // Park is one-tap with a small duration set (today / this week / next week,
+  // PLAN-PHASE-2-3.md line 65). Parking sets a FUTURE parkedUntil; the item is
+  // hidden until the resurfacing clock crosses it, never deleted.
+  // -------------------------------------------------------------------------
+  const handleTodoDone = useCallback(
+    (id: string) => {
+      onUpdateTodo?.(id, { doneAt: now.getTime() });
+    },
+    [onUpdateTodo, now],
+  );
+
+  const handleTodoPark = useCallback(
+    (id: string, parkedUntil: number) => {
+      onUpdateTodo?.(id, { parkedUntil });
+    },
+    [onUpdateTodo],
+  );
+
+  // M18: the small park duration set, anchored at the resurfacing clock.
+  const todoParkDurations = useMemo(() => parkDurations(resurfaceNow), [resurfaceNow]);
+
   // @next/@later collapse: open, non-parked todos with horizon 'next' or 'later'.
   const collapsedHorizonItems = useMemo(
     () => {
@@ -1357,6 +1680,44 @@ export default function HomeView({
   }, []);
 
   // -------------------------------------------------------------------------
+  // M18: morning ritual state (default OFF, cue-bound to first open).
+  //
+  // The ritual renders ONCE at first open when the flag is on. Finishing it
+  // flips ritualDismissed for this render tree (session-only; the morningRitual
+  // flag controls whether it fires at all on the next app open, the same cue
+  // Phase 1's Home-on-open uses). Where parked-and-resurfaced items get
+  // retriaged: the retriage item is the next untriaged todo. The completion
+  // surface carries the rolling last-24h count via morningClosedCount.
+  // -------------------------------------------------------------------------
+
+  const [ritualDismissed, setRitualDismissed] = useState(false);
+  const showMorningRitual = morningRitual && !ritualDismissed;
+
+  // The rolling last-24h completion count (the closedRecent model applied to
+  // todo doneAt timestamps). Non-zero at a morning open when yesterday-evening
+  // work is inside the window, so the cue opens on momentum (1.5).
+  const morningClosed = useMemo(
+    () => morningClosedCount(todos, resurfaceNow),
+    [todos, resurfaceNow],
+  );
+
+  const handleRitualDone = useCallback(() => setRitualDismissed(true), []);
+
+  // -------------------------------------------------------------------------
+  // M18: the just-completed todo settle rows.
+  //
+  // recentTodoCloses is the transient set of todo ids completed this session.
+  // For each id still present in the todos array we render a motion-safe settle
+  // row acknowledging the finish (the row settles; no confetti, no streak).
+  // -------------------------------------------------------------------------
+  const settleRows = useMemo(() => {
+    if (recentTodoCloses.length === 0) return [];
+    return recentTodoCloses
+      .map((id) => todos.find((t) => t.id === id))
+      .filter((t): t is TodoItem => t !== undefined);
+  }, [recentTodoCloses, todos]);
+
+  // -------------------------------------------------------------------------
   // State selection (4.3 timeline / 4.5 last-good preference)
   // -------------------------------------------------------------------------
 
@@ -1405,8 +1766,14 @@ export default function HomeView({
 
     // 4. Polled, nothing matched AND no live-tab candidates.
     // When programs:[] but there are past-floor idleNeedsYou tabs, skip this
-    // state and fall through to the board/caught-up logic (M8b-iii).
-    if (state.programs.length === 0 && idleTabItems.length === 0) {
+    // state and fall through to the board/caught-up logic (M8b-iii). M18: a
+    // resurfaced @now todo (Tier-5 candidate) also keeps the board surface alive
+    // so the todo can be the hero on an otherwise-empty program board.
+    if (
+      state.programs.length === 0 &&
+      idleTabItems.length === 0 &&
+      todoCandidates.length === 0
+    ) {
       return (
         <div className="p-6" data-testid="home-no-programs">
           <p className="text-sm text-muted-foreground">{HOME_COPY.noProgramsTracked}</p>
@@ -1467,18 +1834,32 @@ export default function HomeView({
           )}
         </div>
 
-        <HeroCard
-          hero={hero}
-          now={now}
-          primaryRef={primaryRef}
-          onOpenPowerShell={onOpenPowerShell}
-          onOpenClaudeWithQuery={onOpenClaudeWithQuery}
-          onCopy={onCopy}
-          onOpenExternal={onOpenExternal}
-          settleClass={heroSettle}
-          onReroll={canReroll ? handleReroll : null}
-          stallActive={stallActive}
-        />
+        {/* M18: a Tier-5 captured @now todo renders its own hero surface with
+            Done + a one-tap park duration set. A program/live-tab hero keeps
+            the HeroCard. A captured todo is DISPLAY-ONLY, so its hero never
+            carries a Claude-injection primary (PLAN.md 1.7). */}
+        {hero.source === 'todo' ? (
+          <TodoHero
+            item={hero}
+            durations={todoParkDurations}
+            onDone={handleTodoDone}
+            onPark={handleTodoPark}
+            onCopy={onCopy}
+          />
+        ) : (
+          <HeroCard
+            hero={hero}
+            now={now}
+            primaryRef={primaryRef}
+            onOpenPowerShell={onOpenPowerShell}
+            onOpenClaudeWithQuery={onOpenClaudeWithQuery}
+            onCopy={onCopy}
+            onOpenExternal={onOpenExternal}
+            settleClass={heroSettle}
+            onReroll={canReroll ? handleReroll : null}
+            stallActive={stallActive}
+          />
+        )}
 
         {/* M16: stall-dim on the sub-dominant list when the stall fires. */}
         <div className={cn(stallActive && 'stall-dim')}>
@@ -1546,6 +1927,25 @@ export default function HomeView({
           onSkip={handleIntakeSkip}
         />
       )}
+
+      {/* M18: the morning ritual. Cue-bound to first open, default OFF. Where
+          parked-and-resurfaced items get retriaged; the completion surface
+          carries the rolling last-24h count with the three honesty guards. */}
+      {showMorningRitual && (
+        <MorningRitual
+          closedCount={morningClosed}
+          retriageItem={triageItem}
+          onAssign={handleTriageAssign}
+          onPark={handleTriagePark}
+          onDone={handleRitualDone}
+        />
+      )}
+
+      {/* M18: the just-completed todo settle rows (the row settles, motion-safe,
+          no confetti, no streak). */}
+      {settleRows.map((t) => (
+        <TodoSettleRow key={t.id} text={t.text} reducedMotion={prefersReducedMotion()} />
+      ))}
 
       {body}
       {/* The subordinate strip lives below the board content (6.4). */}

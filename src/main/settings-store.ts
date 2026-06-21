@@ -22,6 +22,8 @@ interface StoreData {
   stallInterrupt: boolean;
   /** M17: commitment-mirror intake (first-open intake only, default OFF). */
   commitmentMirror: boolean;
+  /** M18: morning ritual + parking (cue-bound to first open, default OFF). */
+  morningRitual: boolean;
 }
 
 const DEFAULTS: StoreData = {
@@ -33,6 +35,7 @@ const DEFAULTS: StoreData = {
   notifyOnIdleFirstRunShown: false,
   stallInterrupt: false,
   commitmentMirror: false,
+  morningRitual: false,
 };
 
 export class SettingsStore {
@@ -140,6 +143,16 @@ export class SettingsStore {
 
   async setCommitmentMirror(value: boolean): Promise<void> {
     this.data.commitmentMirror = value;
+    await this.save();
+  }
+
+  // M18: morning ritual + parking flag
+  getMorningRitual(): boolean {
+    return this.data.morningRitual;
+  }
+
+  async setMorningRitual(value: boolean): Promise<void> {
+    this.data.morningRitual = value;
     await this.save();
   }
 

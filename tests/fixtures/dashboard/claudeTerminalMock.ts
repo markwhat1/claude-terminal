@@ -153,6 +153,9 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   // M17: commitment-mirror intake flag
   getCommitmentMirror: (): Promise<boolean> => Promise.resolve(false),
   setCommitmentMirror: (_value: boolean): Promise<void> => Promise.resolve(),
+  // M18: morning ritual + parking flag
+  getMorningRitual: (): Promise<boolean> => Promise.resolve(false),
+  setMorningRitual: (_value: boolean): Promise<void> => Promise.resolve(),
 
   // Hook config
   getHookConfig: (_projectId?: string): Promise<RepoHookConfig> =>
