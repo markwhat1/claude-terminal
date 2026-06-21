@@ -7,6 +7,10 @@ import type { ShellOption } from '../shared/platform';
 import { getAllShellOptions } from '../shared/platform';
 import { ShellContext } from './shell-context';
 import StartupDialog from './components/StartupDialog';
+import RemoteSession from './RemoteSession';
+import ConnectRemoteDialog from './components/ConnectRemoteDialog';
+import { WebSocketBridge } from '../web-client/ws-bridge';
+import { restoreLocal } from './remote-swap';
 import TabBar from './components/TabBar';
 import Terminal from './components/Terminal';
 import HomeView, { type HomeLoadStatus } from './components/HomeView';
@@ -31,7 +35,7 @@ import SettingsDialog from './components/SettingsDialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 
-type AppState = 'startup' | 'running';
+type AppState = 'startup' | 'running' | 'remote';
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>('startup');
@@ -45,6 +49,19 @@ export default function App() {
   const [showWorktreeDialog, setShowWorktreeDialog] = useState(false);
   const [showWorktreeManager, setShowWorktreeManager] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+
+  // Native remote-connect (this app as a client of another machine)
+  const bridgeRef = useRef<WebSocketBridge | null>(null);
+  const [remoteTarget, setRemoteTarget] = useState<{ url: string; token: string; autoConnect: boolean } | null>(null);
+  const remoteTargetRef = useRef(remoteTarget);
+  remoteTargetRef.current = remoteTarget;
+  const [showConnectRemote, setShowConnectRemote] = useState(false);
+  const [rememberedRemoteUrl, setRememberedRemoteUrl] = useState('');
+  // Pending connect intent; the connection is persisted only after the connect
+  // succeeds (see persistToken in the remote render), so a mistyped url/code
+  // never poisons future auto-reconnect.
+  const pendingConnectRef = useRef<{ url: string; remember: boolean } | null>(null);
+  const bootstrappedRef = useRef(false);
 
   // Multi-project state
   const [projects, setProjects] = useState<ProjectConfig[]>([]);
@@ -455,6 +472,51 @@ export default function App() {
     setRemoteInfo({ status: 'inactive', tunnelUrl: null, token: null, error: null });
   }, []);
 
+  // --- Native remote-connect (this app as a client of another machine) ---
+  const handleConnectRemote = useCallback((url: string, code: string, remember: boolean) => {
+    // Persist only AFTER a successful connect (via persistToken in the remote
+    // render), so a mistyped url/code never poisons future auto-reconnect.
+    pendingConnectRef.current = { url, remember };
+    setRememberedRemoteUrl(url);
+    bridgeRef.current = new WebSocketBridge();
+    setRemoteTarget({ url, token: code, autoConnect: remember });
+    setShowConnectRemote(false);
+    setAppState('remote');
+  }, []);
+
+  const handleForgetRemoteHost = useCallback(async () => {
+    await window.claudeTerminal.clearRemoteConnection();
+    setRememberedRemoteUrl('');
+    setShowConnectRemote(false);
+  }, []);
+
+  const handleDisconnectRemote = useCallback(async () => {
+    // Restore the local Electron api first so the calls below (and any later
+    // local session) hit the real preload, not the dead bridge stubs.
+    restoreLocal();
+    bridgeRef.current?.close();
+    bridgeRef.current = null;
+    const conn = await window.claudeTerminal.getRemoteConnection();
+    if (conn) {
+      await window.claudeTerminal.setRemoteConnection({ ...conn, autoConnect: false });
+    }
+    setRemoteTarget(null);
+    setAppState('startup');
+  }, []);
+
+  const handleRegenerateRemoteCode = useCallback(async () => {
+    const info = await window.claudeTerminal.regenerateRemoteCode();
+    setRemoteInfo(info);
+  }, []);
+
+  const handleRemoteConnectError = useCallback((err: Error) => {
+    // Initial connect failed (host down / bad code): fall back to local startup.
+    // The global was never swapped (connect throws before enterRemote), so no
+    // restore is needed.
+    setAppState('startup');
+    setAlertMessage(`Could not reach ${remoteTargetRef.current?.url ?? 'the host'}: ${err.message}`);
+  }, []);
+
   const tryShowWorktreeDialog = useCallback(async () => {
     try {
       await window.claudeTerminal.getCurrentBranch(activeProjectIdRef.current ?? undefined);
@@ -517,8 +579,24 @@ export default function App() {
     let cancelled = false;
 
     (async () => {
+      if (bootstrappedRef.current) return;
+      bootstrappedRef.current = true;
       const cliDir = await window.claudeTerminal.getCliStartDir();
-      if (!cliDir || cancelled) return;
+      if (cancelled) return;
+      if (!cliDir) {
+        // No CLI dir: auto-reconnect to a remembered remote host if one is set.
+        // CLI start dir always wins over auto-reconnect, so they never race.
+        const conn = await window.claudeTerminal.getRemoteConnection();
+        if (cancelled) return;
+        if (conn?.url) setRememberedRemoteUrl(conn.url);
+        if (conn?.autoConnect && conn.url && conn.token) {
+          pendingConnectRef.current = { url: conn.url, remember: true };
+          bridgeRef.current = new WebSocketBridge();
+          setRemoteTarget({ url: conn.url, token: conn.token, autoConnect: true });
+          setAppState('remote');
+        }
+        return;
+      }
 
       setWorkspaceDir(cliDir);
 
@@ -792,11 +870,44 @@ export default function App() {
     }
   }, []);
 
+  if (appState === 'remote' && bridgeRef.current && remoteTarget) {
+    return (
+      <ShellContext.Provider value={availableShells}>
+        <div className="flex flex-col h-screen border border-[hsl(var(--project-hue)_40%_25%)]">
+          <RemoteSession
+            bridge={bridgeRef.current}
+            targetUrl={remoteTarget.url}
+            initialToken={remoteTarget.token}
+            persistToken={(token) => {
+              // Fires after a successful connect, before the api swap, so the
+              // local api is still active. This is the only place the connection
+              // is persisted, so a failed connect can never poison auto-reconnect.
+              const p = pendingConnectRef.current;
+              if (p) window.claudeTerminal.setRemoteConnection({ url: p.url, token, autoConnect: p.remember });
+            }}
+            loadSavedToken={() => remoteTargetRef.current?.token ?? null}
+            onExit={handleDisconnectRemote}
+            onRetry={handleDisconnectRemote}
+            onConnectError={handleRemoteConnectError}
+          />
+        </div>
+      </ShellContext.Provider>
+    );
+  }
+
   if (appState === 'startup') {
     return (
       <ShellContext.Provider value={availableShells}>
         <div className="flex flex-col h-screen border border-[hsl(var(--project-hue)_40%_25%)]">
-          <StartupDialog onStart={handleStartSession} />
+          <StartupDialog onStart={handleStartSession} onConnectRemote={() => setShowConnectRemote(true)} />
+          {showConnectRemote && (
+            <ConnectRemoteDialog
+              defaultUrl={rememberedRemoteUrl}
+              onConnect={handleConnectRemote}
+              onCancel={() => setShowConnectRemote(false)}
+              onForget={handleForgetRemoteHost}
+            />
+          )}
         </div>
       </ShellContext.Provider>
     );
@@ -839,6 +950,8 @@ export default function App() {
           onDeactivateRemote={handleDeactivateRemote}
           onSelectHome={() => handleSelectTab(homeTabId)}
           isHomeActive={activeTabId === homeTabId}
+          onConnectRemote={() => setShowConnectRemote(true)}
+          onRegenerateRemoteCode={remoteInfo.status === 'active' ? handleRegenerateRemoteCode : undefined}
         />
         <div className="flex-1 relative overflow-hidden" data-terminal-area>
           {tabs.map((tab) => (
@@ -887,6 +1000,14 @@ export default function App() {
           hideStatusCounts={activeTabId === homeTabId}
         />
       </div>
+      {showConnectRemote && (
+        <ConnectRemoteDialog
+          defaultUrl={rememberedRemoteUrl}
+          onConnect={handleConnectRemote}
+          onCancel={() => setShowConnectRemote(false)}
+          onForget={handleForgetRemoteHost}
+        />
+      )}
       {showWorktreeDialog && (
         <WorktreeNameDialog
           onCreateWithWorktree={handleNewTabWithWorktree}

@@ -3,7 +3,7 @@ import { exec, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { PermissionMode, RemoteAccessInfo, RepoHookConfig, Tab, ProjectConfig } from '@shared/types';
+import type { PermissionMode, RemoteAccessInfo, RemoteConnection, RemoteTransport, RepoHookConfig, Tab, ProjectConfig } from '@shared/types';
 import { getAllShellOptions, type ShellOption } from '@shared/platform';
 import { PERMISSION_FLAGS } from '@shared/types';
 import { isAllowedExternalScheme } from '@shared/url-scheme';
@@ -60,6 +60,7 @@ export interface IpcHandlerDeps {
   activateRemoteAccess: () => Promise<RemoteAccessInfo>;
   deactivateRemoteAccess: () => Promise<void>;
   getRemoteAccessInfo: () => RemoteAccessInfo;
+  regenerateRemoteCode: () => Promise<RemoteAccessInfo>;
   /**
    * M10c: the MAIN-owned pending-injection state for the claude:injectQuery
    * handler. The same instance is injected into the hook-router so the idle gate
@@ -875,6 +876,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
     await settings.setOffAppNudge(value);
   });
 
+  ipcMain.handle('settings:getRemoteTransport', async () => {
+    return settings.getRemoteTransport();
+  });
+
+  ipcMain.handle('settings:setRemoteTransport', async (_event, transport: RemoteTransport) => {
+    await settings.setRemoteTransport(transport);
+  });
+
+  ipcMain.handle('settings:getRemoteConnection', async () => {
+    return settings.getRemoteConnection();
+  });
+
+  ipcMain.handle('settings:setRemoteConnection', async (_event, conn: RemoteConnection) => {
+    await settings.setRemoteConnection(conn);
+  });
+
+  ipcMain.handle('settings:clearRemoteConnection', async () => {
+    await settings.clearRemoteConnection();
+  });
+
   // ---- Hook Config ----
   ipcMain.handle('hookConfig:load', async (_event, projectId?: string) => {
     const project = projectId ? state.projectManager?.getProject(projectId) : undefined;
@@ -982,6 +1003,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
 
   ipcMain.handle('remote:getInfo', async () => {
     return deps.getRemoteAccessInfo();
+  });
+
+  ipcMain.handle('remote:regenerateCode', async () => {
+    return deps.regenerateRemoteCode();
   });
 
   // ---- Program Board (local-only, never forwarded to remote clients) ----

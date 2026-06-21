@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { app } from 'electron';
-import { PermissionMode, SavedTab } from '@shared/types';
+import { PermissionMode, RemoteConnection, RemoteTransport, SavedTab } from '@shared/types';
+import { genToken } from '@shared/token';
+import { encryptField, decryptField } from './secure-store';
 import { log } from './logger';
 
 const MAX_RECENT_DIRS = 10;
@@ -26,6 +28,11 @@ interface StoreData {
   morningRitual: boolean;
   /** M19: off-app batched nudge (opt-in, default OFF; sends only when also scheduled). */
   offAppNudge: boolean;
+  remoteTransport: RemoteTransport;
+  /** Encrypted-at-rest host access token (enc:/plain: tagged). */
+  remoteAccessToken: string | null;
+  /** Remembered remote host for the client (its token field is encrypted at rest). */
+  remoteConnection: RemoteConnection | null;
 }
 
 const DEFAULTS: StoreData = {
@@ -39,6 +46,9 @@ const DEFAULTS: StoreData = {
   commitmentMirror: false,
   morningRitual: false,
   offAppNudge: false,
+  remoteTransport: 'tailscale',
+  remoteAccessToken: null,
+  remoteConnection: null,
 };
 
 export class SettingsStore {
@@ -166,6 +176,62 @@ export class SettingsStore {
 
   async setOffAppNudge(value: boolean): Promise<void> {
     this.data.offAppNudge = value;
+    await this.save();
+  }
+
+  getRemoteTransport(): RemoteTransport {
+    return this.data.remoteTransport;
+  }
+
+  async setRemoteTransport(transport: RemoteTransport): Promise<void> {
+    this.data.remoteTransport = transport;
+    await this.save();
+  }
+
+  /**
+   * Return the stable host access token, minting and persisting one on first
+   * use. Async so the first-mint write is observable: callers await this before
+   * serving, so a saved client token is never invalidated by a lost write.
+   */
+  async getOrCreateRemoteAccessToken(): Promise<string> {
+    if (this.data.remoteAccessToken) {
+      const decrypted = decryptField(this.data.remoteAccessToken);
+      if (decrypted) return decrypted;
+    }
+    const token = genToken();
+    this.data.remoteAccessToken = encryptField(token);
+    await this.save();
+    return token;
+  }
+
+  /** Rotate and persist a new host access token (revokes saved client tokens). */
+  async regenerateRemoteAccessToken(): Promise<string> {
+    const token = genToken();
+    this.data.remoteAccessToken = encryptField(token);
+    await this.save();
+    return token;
+  }
+
+  /** The remembered remote connection, with its token decrypted (null if none). */
+  getRemoteConnection(): RemoteConnection | null {
+    const c = this.data.remoteConnection;
+    if (!c) return null;
+    return { url: c.url, token: decryptField(c.token), autoConnect: c.autoConnect };
+  }
+
+  /** Persist the remembered remote connection, encrypting the token at rest. */
+  async setRemoteConnection(conn: RemoteConnection): Promise<void> {
+    this.data.remoteConnection = {
+      url: conn.url,
+      token: encryptField(conn.token),
+      autoConnect: conn.autoConnect,
+    };
+    await this.save();
+  }
+
+  /** Forget the remembered remote connection entirely. */
+  async clearRemoteConnection(): Promise<void> {
+    this.data.remoteConnection = null;
     await this.save();
   }
 

@@ -34,6 +34,14 @@ export function destroyTerminal(tabId: string): void {
   pendingWrites.delete(tabId);
 }
 
+/** Destroy every cached terminal. Used when swapping the backing API (local
+ *  Electron bridge <-> remote socket) so terminals re-create against the new one. */
+export function destroyAllTerminals(): void {
+  for (const tabId of Array.from(terminalCache.keys())) {
+    destroyTerminal(tabId);
+  }
+}
+
 /**
  * Serialize a terminal's visible buffer + scrollback as ANSI escape sequences.
  * Exposed as a global so the main process can call it via executeJavaScript.

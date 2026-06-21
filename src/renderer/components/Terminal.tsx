@@ -5,7 +5,7 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
-import { terminalCache, pendingBytes, pausedTabs, pendingWrites } from './terminalCache';
+import { terminalCache, pendingBytes, pausedTabs, pendingWrites, destroyAllTerminals } from './terminalCache';
 import { matchKeybinding, isTabJump } from '../keybindings';
 
 interface TerminalProps {
@@ -24,6 +24,27 @@ const LOW_WATERMARK = 10 * 1024;  // 10KB
 // reloads — a module-level variable would reset, leaving the old listener
 // on ipcRenderer and causing duplicate writes (doubled characters).
 let ptyListenerRegistered = false;
+
+/**
+ * Tear down the global PTY + worktree-progress listeners and all cached
+ * terminals so the next terminal mount re-binds against whatever
+ * window.claudeTerminal points at now. Required when swapping between the local
+ * Electron bridge and a remote WebSocket bridge: the listener is registered
+ * exactly once against the api present at first mount, so without this a swapped
+ * remote terminal would render its snapshot and then receive no live output.
+ */
+export function resetGlobalPtyListener(): void {
+  const win = window as unknown as {
+    __cleanupPtyListener?: () => void;
+    __cleanupWorktreeProgressListener?: () => void;
+  };
+  if (typeof win.__cleanupPtyListener === 'function') win.__cleanupPtyListener();
+  if (typeof win.__cleanupWorktreeProgressListener === 'function') win.__cleanupWorktreeProgressListener();
+  win.__cleanupPtyListener = undefined;
+  win.__cleanupWorktreeProgressListener = undefined;
+  ptyListenerRegistered = false;
+  destroyAllTerminals();
+}
 
 function ensurePtyListener(): void {
   if (ptyListenerRegistered) return;

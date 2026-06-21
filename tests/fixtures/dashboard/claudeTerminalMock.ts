@@ -10,7 +10,7 @@
  */
 
 import type { ClaudeTerminalApi } from '../../../src/preload';
-import type { Tab, RemoteAccessInfo, HookExecutionStatus, ProjectConfig, WorkspaceConfig, PermissionMode, RepoHookConfig, SavedTab } from '../../../src/shared/types';
+import type { Tab, RemoteAccessInfo, RemoteConnection, RemoteTransport, HookExecutionStatus, ProjectConfig, WorkspaceConfig, PermissionMode, RepoHookConfig, SavedTab } from '../../../src/shared/types';
 import type { ShellOption } from '../../../src/shared/platform';
 import type { InjectStatus } from '../../../src/shared/injection';
 import type { ClaudeQueryLine } from '../../../src/shared/home-copy';
@@ -223,6 +223,14 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   deactivateRemoteAccess: (): Promise<void> => Promise.resolve(),
   getRemoteAccessInfo: (): Promise<RemoteAccessInfo> =>
     Promise.resolve({ status: 'inactive', tunnelUrl: null, token: null, error: null }),
+  // Remote access (dev branch: rotate code, transport + remembered connection)
+  regenerateRemoteCode: (): Promise<RemoteAccessInfo> =>
+    Promise.resolve({ status: 'inactive', tunnelUrl: null, token: null, error: null }),
+  getRemoteTransport: (): Promise<RemoteTransport> => Promise.resolve('cloudflare'),
+  setRemoteTransport: (_transport: RemoteTransport): Promise<void> => Promise.resolve(),
+  getRemoteConnection: (): Promise<RemoteConnection | null> => Promise.resolve(null),
+  setRemoteConnection: (_conn: RemoteConnection): Promise<void> => Promise.resolve(),
+  clearRemoteConnection: (): Promise<void> => Promise.resolve(),
 
   // Update notification
   getUpdateInfo: (): Promise<{ version: string; url: string } | null> =>

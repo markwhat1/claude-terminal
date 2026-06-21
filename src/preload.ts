@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { PermissionMode, Tab, SavedTab, RemoteAccessInfo, RepoHookConfig, HookExecutionStatus, ProjectConfig, WorkspaceConfig } from './shared/types';
+import type { PermissionMode, Tab, SavedTab, RemoteAccessInfo, RemoteConnection, RemoteTransport, RepoHookConfig, HookExecutionStatus, ProjectConfig, WorkspaceConfig } from './shared/types';
 import type { ShellOption } from './shared/platform';
 import { PROGRAM_BOARD_STATE_CHANNEL } from './shared/program-board-state';
 import {
@@ -174,6 +174,18 @@ const api = {
     ipcRenderer.invoke('remote:deactivate'),
   getRemoteAccessInfo: (): Promise<RemoteAccessInfo> =>
     ipcRenderer.invoke('remote:getInfo'),
+  regenerateRemoteCode: (): Promise<RemoteAccessInfo> =>
+    ipcRenderer.invoke('remote:regenerateCode'),
+  getRemoteTransport: (): Promise<RemoteTransport> =>
+    ipcRenderer.invoke('settings:getRemoteTransport'),
+  setRemoteTransport: (transport: RemoteTransport): Promise<void> =>
+    ipcRenderer.invoke('settings:setRemoteTransport', transport),
+  getRemoteConnection: (): Promise<RemoteConnection | null> =>
+    ipcRenderer.invoke('settings:getRemoteConnection'),
+  setRemoteConnection: (conn: RemoteConnection): Promise<void> =>
+    ipcRenderer.invoke('settings:setRemoteConnection', conn),
+  clearRemoteConnection: (): Promise<void> =>
+    ipcRenderer.invoke('settings:clearRemoteConnection'),
 
   // Update notification
   getUpdateInfo: (): Promise<{ version: string; url: string } | null> =>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Cloud, Loader2 } from 'lucide-react';
-import type { RemoteAccessInfo } from '../../shared/types';
+import type { RemoteAccessInfo, RemoteTransport } from '../../shared/types';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -9,13 +9,26 @@ interface RemoteAccessButtonProps {
   remoteInfo: RemoteAccessInfo;
   onActivate: () => void;
   onDeactivate: () => void;
+  /** Host only: rotate the access code (revokes saved client tokens). */
+  onRegenerate?: () => void;
 }
 
-export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivate }: RemoteAccessButtonProps) {
+export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivate, onRegenerate }: RemoteAccessButtonProps) {
   const [open, setOpen] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
+  const [transport, setTransport] = useState<RemoteTransport>('tailscale');
+
+  // Load the persisted transport once on mount.
+  useEffect(() => {
+    window.claudeTerminal.getRemoteTransport().then(setTransport).catch(() => {});
+  }, []);
+
+  const changeTransport = (t: RemoteTransport) => {
+    setTransport(t);
+    window.claudeTerminal.setRemoteTransport(t);
+  };
 
   // Clear activating state once the status progresses
   useEffect(() => {
@@ -81,10 +94,30 @@ export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivat
         {remoteInfo.status === 'inactive' && (
           <>
             <p className="text-xs text-muted-foreground mb-2">
-              Share a secure tunnel URL so others can connect to this session from a browser.
+              {transport === 'tailscale'
+                ? 'Serve this session over your private Tailscale network. No public tunnel; reach it from another device on your tailnet.'
+                : 'Share a public Cloudflare tunnel URL so others can connect to this session from any browser.'}
             </p>
+            <div className="flex gap-1 mb-2">
+              <Button
+                variant={transport === 'tailscale' ? 'default' : 'outline'}
+                size="sm"
+                className="flex-1 h-7 text-xs"
+                onClick={() => changeTransport('tailscale')}
+              >
+                Tailscale
+              </Button>
+              <Button
+                variant={transport === 'cloudflare' ? 'default' : 'outline'}
+                size="sm"
+                className="flex-1 h-7 text-xs"
+                onClick={() => changeTransport('cloudflare')}
+              >
+                Cloudflare
+              </Button>
+            </div>
             <Button
-              className="w-full mt-2"
+              className="w-full mt-1"
               disabled={activating}
               onClick={() => { setActivating(true); onActivate(); }}
             >
@@ -109,9 +142,11 @@ export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivat
           <p className="text-xs text-muted-foreground">Connecting tunnel...</p>
         )}
 
-        {remoteInfo.status === 'active' && remoteInfo.tunnelUrl && (
+        {remoteInfo.status === 'active' && (
           <>
-            <div className="text-xs text-success mb-2">&#9679; Connected</div>
+            <div className="text-xs text-success mb-2">
+              &#9679; Connected{remoteInfo.transport === 'tailscale' ? ' · Tailscale' : ''}
+            </div>
 
             {qrDataUrl && (
               <div className="flex justify-center mb-2">
@@ -119,18 +154,24 @@ export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivat
               </div>
             )}
 
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-[10px] text-muted-foreground w-8">URL</span>
-              <span className="text-xs flex-1 truncate">{truncate(remoteInfo.tunnelUrl, 32)}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-5 text-[10px] px-1.5"
-                onClick={() => copyToClipboard(remoteInfo.tunnelUrl!, 'url')}
-              >
-                {copiedField === 'url' ? 'Copied!' : 'Copy'}
-              </Button>
-            </div>
+            {remoteInfo.tunnelUrl ? (
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-[10px] text-muted-foreground w-8">URL</span>
+                <span className="text-xs flex-1 truncate">{truncate(remoteInfo.tunnelUrl, 32)}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-5 text-[10px] px-1.5"
+                  onClick={() => copyToClipboard(remoteInfo.tunnelUrl!, 'url')}
+                >
+                  {copiedField === 'url' ? 'Copied!' : 'Copy'}
+                </Button>
+              </div>
+            ) : remoteInfo.transport === 'tailscale' ? (
+              <p className="text-[10px] text-muted-foreground mb-1">
+                Serving on port 8473. Reach it from another tailnet device at this machine's Tailscale URL. Run <code>tailscale serve</code> if it isn't set up yet.
+              </p>
+            ) : null}
 
             {remoteInfo.token && (
               <div className="flex items-center gap-1 mb-2">
@@ -145,6 +186,16 @@ export default function RemoteAccessButton({ remoteInfo, onActivate, onDeactivat
                   {copiedField === 'token' ? 'Copied!' : 'Copy'}
                 </Button>
               </div>
+            )}
+
+            {onRegenerate && (
+              <Button
+                variant="outline"
+                className="w-full mt-2 text-xs"
+                onClick={() => onRegenerate()}
+              >
+                Regenerate code
+              </Button>
             )}
 
             <Button

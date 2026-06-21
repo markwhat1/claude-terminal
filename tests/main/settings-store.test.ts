@@ -6,6 +6,11 @@ import os from 'os';
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => os.tmpdir()) },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (s: string) => Buffer.from('E::' + s, 'utf-8'),
+    decryptString: (b: Buffer) => b.toString('utf-8').replace(/^E::/, ''),
+  },
 }));
 
 import { SettingsStore } from '@main/settings-store';
@@ -246,6 +251,62 @@ describe('SettingsStore', () => {
     await fs2.writeFile(tmpFile, JSON.stringify({ recentDirs: [], permissionMode: 'bypassPermissions', defaultShell: null }), 'utf-8');
     const store2 = new SettingsStore(tmpFile);
     expect(store2.getOffAppNudge()).toBe(false);
+  });
+
+  it('returns tailscale as the default remote transport', () => {
+    expect(store.getRemoteTransport()).toBe('tailscale');
+  });
+
+  it('saves and retrieves the remote transport', async () => {
+    await store.setRemoteTransport('cloudflare');
+    expect(store.getRemoteTransport()).toBe('cloudflare');
+  });
+
+  it('persists the remote transport to disk and reloads', async () => {
+    await store.setRemoteTransport('cloudflare');
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getRemoteTransport()).toBe('cloudflare');
+  });
+
+  it('mints a stable host access token and returns it across calls', async () => {
+    const t1 = await store.getOrCreateRemoteAccessToken();
+    expect(t1).toMatch(/^[A-Z0-9]{6}$/);
+    expect(await store.getOrCreateRemoteAccessToken()).toBe(t1);
+  });
+
+  it('persists the host access token across reloads', async () => {
+    const t1 = await store.getOrCreateRemoteAccessToken();
+    const store2 = new SettingsStore(tmpFile);
+    expect(await store2.getOrCreateRemoteAccessToken()).toBe(t1);
+  });
+
+  it('stores the host token encrypted, not as raw text', async () => {
+    const t1 = await store.getOrCreateRemoteAccessToken();
+    const raw = fs.readFileSync(tmpFile, 'utf-8');
+    expect(raw).not.toContain(t1);
+    expect(raw).toContain('enc:v1:');
+  });
+
+  it('regenerateRemoteAccessToken returns a different token and persists it', async () => {
+    const t1 = await store.getOrCreateRemoteAccessToken();
+    const t2 = await store.regenerateRemoteAccessToken();
+    expect(t2).not.toBe(t1);
+    expect(await store.getOrCreateRemoteAccessToken()).toBe(t2);
+  });
+
+  it('remembers a remote connection with the token encrypted at rest, and clears it', async () => {
+    expect(store.getRemoteConnection()).toBeNull();
+    await store.setRemoteConnection({ url: 'https://h.ts.net', token: 'ABC234', autoConnect: true });
+    expect(store.getRemoteConnection()).toEqual({ url: 'https://h.ts.net', token: 'ABC234', autoConnect: true });
+
+    const raw = fs.readFileSync(tmpFile, 'utf-8');
+    expect(raw).not.toContain('ABC234');
+
+    const store2 = new SettingsStore(tmpFile);
+    expect(store2.getRemoteConnection()?.token).toBe('ABC234');
+
+    await store.clearRemoteConnection();
+    expect(store.getRemoteConnection()).toBeNull();
   });
 });
 

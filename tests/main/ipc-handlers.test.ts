@@ -137,6 +137,11 @@ function makeMockDeps(): IpcHandlerDeps {
       getPermissionMode: vi.fn(() => 'bypassPermissions'),
       getStartupView: vi.fn((): 'lastSession' | 'home' => 'lastSession'),
       saveSessions: vi.fn(),
+      getRemoteTransport: vi.fn(() => 'tailscale'),
+      setRemoteTransport: vi.fn(),
+      getRemoteConnection: vi.fn(() => null),
+      setRemoteConnection: vi.fn(),
+      clearRemoteConnection: vi.fn(),
     } as unknown as SettingsStore,
     workspaceStore: {
       listWorkspaces: vi.fn(async () => []),
@@ -164,6 +169,7 @@ function makeMockDeps(): IpcHandlerDeps {
     activateRemoteAccess: vi.fn(async () => ({ status: 'connecting' as const, tunnelUrl: null, token: 'test-token', error: null })),
     deactivateRemoteAccess: vi.fn(async () => {}),
     getRemoteAccessInfo: vi.fn(() => ({ status: 'inactive' as const, tunnelUrl: null, token: null, error: null })),
+    regenerateRemoteCode: vi.fn(async () => ({ status: 'inactive' as const, tunnelUrl: null, token: null, error: null })),
     queryInjector: {
       arm: vi.fn(),
       isArmed: vi.fn(() => false),
@@ -201,8 +207,10 @@ describe('registerIpcHandlers', () => {
       'worktree:create', 'worktree:currentBranch', 'worktree:listDetails', 'worktree:remove', 'worktree:checkStatus',
       'hookConfig:load', 'hookConfig:save',
       'settings:recentDirs', 'settings:removeRecentDir', 'settings:permissionMode', 'settings:getDefaultShell', 'settings:setDefaultShell', 'settings:getStartupView', 'settings:setStartupView', 'settings:getNotifyOnIdle', 'settings:setNotifyOnIdle', 'settings:getStallInterrupt', 'settings:setStallInterrupt', 'settings:getCommitmentMirror', 'settings:setCommitmentMirror', 'settings:getMorningRitual', 'settings:setMorningRitual', 'settings:getOffAppNudge', 'settings:setOffAppNudge',
+      'settings:getRemoteTransport', 'settings:setRemoteTransport',
+      'settings:getRemoteConnection', 'settings:setRemoteConnection', 'settings:clearRemoteConnection',
       'dialog:selectDirectory', 'cli:getStartDir',
-      'remote:activate', 'remote:deactivate', 'remote:getInfo',
+      'remote:activate', 'remote:deactivate', 'remote:getInfo', 'remote:regenerateCode',
       'instance:getHue',
       'program-board:getState',
       'claude:injectQuery',
@@ -305,6 +313,42 @@ describe('registerIpcHandlers', () => {
     const result = await handler({});
 
     expect(result).toBe('/some/path');
+  });
+
+  it('settings:getRemoteTransport returns the stored transport', async () => {
+    const handler = handlers.get('settings:getRemoteTransport')!;
+    const result = await handler({});
+
+    expect(result).toBe('tailscale');
+  });
+
+  it('settings:setRemoteTransport persists the transport', async () => {
+    const handler = handlers.get('settings:setRemoteTransport')!;
+    await handler({}, 'cloudflare');
+
+    expect(deps.settings.setRemoteTransport).toHaveBeenCalledWith('cloudflare');
+  });
+
+  it('remote:regenerateCode delegates to the handler', async () => {
+    const handler = handlers.get('remote:regenerateCode')!;
+    await handler({});
+
+    expect(deps.regenerateRemoteCode).toHaveBeenCalled();
+  });
+
+  it('settings:setRemoteConnection persists the connection', async () => {
+    const handler = handlers.get('settings:setRemoteConnection')!;
+    const conn = { url: 'https://h.ts.net', token: 'ABC234', autoConnect: true };
+    await handler({}, conn);
+
+    expect(deps.settings.setRemoteConnection).toHaveBeenCalledWith(conn);
+  });
+
+  it('settings:clearRemoteConnection delegates to settings', async () => {
+    const handler = handlers.get('settings:clearRemoteConnection')!;
+    await handler({});
+
+    expect(deps.settings.clearRemoteConnection).toHaveBeenCalled();
   });
 
   it('registers pty:pause and pty:resume listeners', () => {

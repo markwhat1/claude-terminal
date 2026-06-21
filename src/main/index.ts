@@ -74,7 +74,8 @@ import { registerIpcHandlers, type AppState, type WirePtyToTabFn } from './ipc-h
 import { QueryInjector } from './query-injector';
 import { TunnelManager } from './tunnel-manager';
 import { WebRemoteServer } from './web-remote-server';
-import type { RemoteAccessInfo } from '@shared/types';
+import { getTailnetUrl } from './tailscale';
+import type { RemoteAccessInfo, RemoteTransport } from '@shared/types';
 import { isAllowedExternalScheme } from '@shared/url-scheme';
 import { FREE_TEXT_QUERY_ENABLED } from '@shared/free-text-query';
 import { log } from './logger';
@@ -96,6 +97,12 @@ const PIPE_NAME = `\\\\.\\pipe\\claude-terminal-${process.pid}`;
 let ipcServer: HookIpcServer | null = null;
 const tunnelManager = new TunnelManager();
 let webRemoteServer: WebRemoteServer | null = null;
+/** Fixed loopback port for the Tailscale/local transport, so `tailscale serve` has a stable target. */
+const TAILSCALE_REMOTE_PORT = 8473;
+/** Transport in use for the current remote-access session. */
+let activeTransport: RemoteTransport = 'cloudflare';
+/** Resolved tailnet URL when the local/Tailscale transport is active (null if undetected). */
+let localRemoteUrl: string | null = null;
 let cleanupIpcHandlers: (() => void) | null = null;
 let wirePtyToTabFn: WirePtyToTabFn | null = null;
 let programBoardReader: ProgramBoardReader | null = null;
@@ -235,20 +242,45 @@ function persistSessions() {
 // ---------------------------------------------------------------------------
 // Remote access
 // ---------------------------------------------------------------------------
+// Serialize activate/deactivate/regenerate so a tunnel error/exit event or a
+// concurrent user action can never recreate or null webRemoteServer mid-op.
+let remoteLock: Promise<unknown> = Promise.resolve();
+function withRemoteLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = remoteLock.then(fn, fn);
+  remoteLock = run.catch(() => {});
+  return run;
+}
+
 function getRemoteAccessInfo(): RemoteAccessInfo {
   if (!webRemoteServer) {
     return { status: 'inactive', tunnelUrl: null, token: null, error: null };
+  }
+  if (activeTransport === 'tailscale') {
+    // The local server is up; reachability over the tailnet is handled by
+    // `tailscale serve`, so we report active as soon as the server is listening.
+    return {
+      status: 'active',
+      tunnelUrl: localRemoteUrl,
+      token: webRemoteServer.accessToken,
+      error: null,
+      transport: 'tailscale',
+    };
   }
   return {
     status: tunnelManager.isActive ? 'active' : 'connecting',
     tunnelUrl: tunnelManager.url,
     token: webRemoteServer.accessToken,
     error: null,
+    transport: 'cloudflare',
   };
 }
 
-async function activateRemoteAccess(): Promise<RemoteAccessInfo> {
+function activateRemoteAccess(): Promise<RemoteAccessInfo> {
+  return withRemoteLock(async (): Promise<RemoteAccessInfo> => {
   if (webRemoteServer) return getRemoteAccessInfo();
+
+  activeTransport = settings.getRemoteTransport();
+  const hostToken = await settings.getOrCreateRemoteAccessToken();
 
   webRemoteServer = new WebRemoteServer({
     tabManager, ptyManager, state,
@@ -265,26 +297,51 @@ async function activateRemoteAccess(): Promise<RemoteAccessInfo> {
     // M12: the capture store path; the remote capture:append handler validates +
     // persists through the same appendTodo path as the local handler.
     captureDir: app.getPath('userData'),
+    token: hostToken,
   });
 
   try {
-    const localPort = await webRemoteServer.start(0);
-    await tunnelManager.start(localPort);
+    if (activeTransport === 'tailscale') {
+      // Local-only: no public Cloudflare tunnel. Bind a fixed loopback port so
+      // a persistent `tailscale serve` mapping can proxy the tailnet to it.
+      await webRemoteServer.start(TAILSCALE_REMOTE_PORT);
+      localRemoteUrl = await getTailnetUrl();
+      log.info(`[remote] tailscale transport active on 127.0.0.1:${TAILSCALE_REMOTE_PORT}, url=${localRemoteUrl ?? '(undetected)'}`);
+    } else {
+      const localPort = await webRemoteServer.start(0);
+      await tunnelManager.start(localPort);
+    }
   } catch (err) {
     log.error('[remote] Failed to activate:', String(err));
     webRemoteServer?.stop();
     webRemoteServer = null;
     tunnelManager.stop();
+    localRemoteUrl = null;
     return { status: 'error', tunnelUrl: null, token: null, error: String(err) };
   }
 
   return getRemoteAccessInfo();
+  });
 }
 
-async function deactivateRemoteAccess(): Promise<void> {
-  tunnelManager.stop();
-  webRemoteServer?.stop();
-  webRemoteServer = null;
+function deactivateRemoteAccess(): Promise<void> {
+  return withRemoteLock(async () => {
+    tunnelManager.stop();
+    webRemoteServer?.stop();
+    webRemoteServer = null;
+    localRemoteUrl = null;
+    activeTransport = 'cloudflare';
+  });
+}
+
+// Rotate the access code in place: no transport restart, so the tunnel/tailnet
+// URL is unchanged; existing remote clients are dropped and must re-enter.
+function regenerateRemoteCode(): Promise<RemoteAccessInfo> {
+  return withRemoteLock(async () => {
+    const token = await settings.regenerateRemoteAccessToken();
+    webRemoteServer?.setToken(token);
+    return getRemoteAccessInfo();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -499,7 +556,7 @@ app.on('ready', async () => {
   const ipcResult = registerIpcHandlers({
     tabManager, ptyManager, settings, workspaceStore, state,
     sendToRenderer, persistSessions, cleanupNamingFlag, clearPendingNotification,
-    activateRemoteAccess, deactivateRemoteAccess, getRemoteAccessInfo,
+    activateRemoteAccess, deactivateRemoteAccess, getRemoteAccessInfo, regenerateRemoteCode,
     queryInjector,
     // M14e: home-opens.json lives under userData, never the workspace git tree.
     homeOpensDir: app.getPath('userData'),

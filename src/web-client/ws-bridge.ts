@@ -2,9 +2,10 @@
  * WebSocket bridge that implements the same API shape as window.claudeTerminal
  * (from src/preload.ts) but communicates over WebSocket instead of Electron IPC.
  */
-import type { Tab, RemoteAccessInfo, ProjectConfig, WorkspaceConfig } from '../shared/types';
+import type { Tab, RemoteAccessInfo, RemoteConnection, RemoteTransport, ProjectConfig, WorkspaceConfig } from '../shared/types';
 import type { ClaudeQueryLine } from '../shared/home-copy';
 import type { InjectStatus } from '../shared/injection';
+import { resolveWsUrl } from './url';
 
 type PtyDataCallback = (tabId: string, data: string) => void;
 type PtyResizedCallback = (tabId: string, cols: number, rows: number) => void;
@@ -32,14 +33,13 @@ export class WebSocketBridge {
    *
    * Returns the initial tab list and active tab ID.
    */
-  connect(token: string): Promise<{
+  connect(token: string, targetUrl?: string, opts?: { timeoutMs?: number }): Promise<{
     tabs: Tab[];
     activeTabId: string | null;
     termSizes: Record<string, { cols: number; rows: number }>;
   }> {
     return new Promise((resolve, reject) => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}`;
+      const wsUrl = resolveWsUrl(window.location, targetUrl);
 
       const ws = new WebSocket(wsUrl);
       this.ws = ws;
@@ -96,11 +96,26 @@ export class WebSocketBridge {
       };
 
       let settled = false;
-      const settle = () => { settled = true; };
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const settle = () => {
+        settled = true;
+        if (timer) { clearTimeout(timer); timer = null; }
+      };
       const origResolve = resolve;
       const origReject = reject;
       resolve = (v) => { settle(); origResolve(v); };
       reject = (e) => { settle(); origReject(e); };
+
+      // Guard against a host that accepts the connection but never completes
+      // auth (e.g. a tailscale-serve proxy with no live backend). Without this
+      // the promise never settles and auto-reconnect-on-launch hangs forever.
+      // Reject before close() so this message wins over the onclose handler.
+      timer = setTimeout(() => {
+        if (!settled) {
+          reject(new Error('Connection timed out'));
+          try { ws.close(); } catch { /* already closing */ }
+        }
+      }, opts?.timeoutMs ?? 12000);
 
       ws.onerror = (err) => {
         console.error('[ws-bridge] error:', err);
@@ -222,6 +237,14 @@ export class WebSocketBridge {
     }
   }
 
+  /** Close the socket. Used by the desktop client on disconnect-to-local. */
+  close(): void {
+    if (this.ws) {
+      try { this.ws.close(); } catch { /* already closing */ }
+      this.ws = null;
+    }
+  }
+
   private send(msg: object): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
@@ -264,7 +287,7 @@ export class WebSocketBridge {
           this.send({ type: 'tab:create' });
         });
       },
-      createTabWithWorktree: async (name: string): Promise<Tab> => {
+      createTabWithWorktree: async (_projectId: string, name: string): Promise<Tab> => {
         return new Promise((resolve, reject) => {
           this.pendingTabCreate = { resolve, reject };
           this.send({ type: 'tab:createWithWorktree', name });
@@ -370,7 +393,7 @@ export class WebSocketBridge {
       listTodos: async (): Promise<unknown[]> => [],
 
       // Hook config (stubs — not available remotely)
-      getHookConfig: async () => ({ hooks: {} }),
+      getHookConfig: async () => ({ hooks: [] }),
       saveHookConfig: async () => {},
       onHookStatus: (_callback: any) => () => {},
 
@@ -399,6 +422,16 @@ export class WebSocketBridge {
       getRemoteAccessInfo: async (): Promise<RemoteAccessInfo> => ({
         status: 'inactive', tunnelUrl: null, token: null, error: null,
       }),
+      regenerateRemoteCode: async (): Promise<RemoteAccessInfo> => ({
+        status: 'inactive', tunnelUrl: null, token: null, error: null,
+      }),
+      // Transport is a host-local setting — the remote client can't change it.
+      getRemoteTransport: async (): Promise<RemoteTransport> => 'cloudflare',
+      setRemoteTransport: async (): Promise<void> => {},
+      // The remembered connection is a client-local concept; no-op remotely.
+      getRemoteConnection: async (): Promise<RemoteConnection | null> => null,
+      setRemoteConnection: async (): Promise<void> => {},
+      clearRemoteConnection: async (): Promise<void> => {},
 
       // Open external URLs (browser can just use window.open)
       openExternal: (url: string): void => {

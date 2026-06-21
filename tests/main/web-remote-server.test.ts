@@ -131,6 +131,21 @@ describe('WebRemoteServer handleMessage', () => {
     });
   });
 
+  describe('setToken', () => {
+    it('rotates the token in place and drops connected clients', () => {
+      const before = server.accessToken;
+      const ws = { readyState: 1, send: vi.fn(), close: vi.fn(), on: vi.fn() };
+      (server as any).clients.add({ ws, authenticated: true, synced: true });
+
+      server.setToken('NEW234');
+
+      expect(server.accessToken).toBe('NEW234');
+      expect(server.accessToken).not.toBe(before);
+      expect(ws.close).toHaveBeenCalled();
+      expect((server as any).clients.size).toBe(0);
+    });
+  });
+
   describe('worktree:currentBranch', () => {
     it('returns empty string when worktreeManager is null', async () => {
       const { sendMessage, sentMessages } = createTestClient(server);

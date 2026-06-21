@@ -145,6 +145,11 @@ Worktree channels accept an optional `projectId` parameter to scope the operatio
 | `settings:recentDirs` | renderer -> main | invoke | `getRecentDirs()` | -> `string[]` |
 | `settings:removeRecentDir` | renderer -> main | invoke | `removeRecentDir(dir)` | `dir: string` |
 | `settings:permissionMode` | renderer -> main | invoke | `getPermissionMode()` | -> `PermissionMode` |
+| `settings:getRemoteTransport` | renderer -> main | invoke | `getRemoteTransport()` | -> `RemoteTransport` |
+| `settings:setRemoteTransport` | renderer -> main | invoke | `setRemoteTransport(transport)` | `transport: RemoteTransport` |
+| `settings:getRemoteConnection` | renderer -> main | invoke | `getRemoteConnection()` | -> `RemoteConnection \| null` |
+| `settings:setRemoteConnection` | renderer -> main | invoke | `setRemoteConnection(conn)` | `conn: RemoteConnection` |
+| `settings:clearRemoteConnection` | renderer -> main | invoke | `clearRemoteConnection()` | -> `void` |
 
 ### Dialog
 
@@ -166,6 +171,7 @@ Worktree channels accept an optional `projectId` parameter to scope the operatio
 | `remote:activate` | renderer -> main | invoke | `activateRemoteAccess()` | -> `RemoteAccessInfo` |
 | `remote:deactivate` | renderer -> main | invoke | `deactivateRemoteAccess()` | -> `void` |
 | `remote:getInfo` | renderer -> main | invoke | `getRemoteAccessInfo()` | -> `RemoteAccessInfo` |
+| `remote:regenerateCode` | renderer -> main | invoke | `regenerateRemoteCode()` | -> `RemoteAccessInfo` (rotates the host code in place) |
 | `remote:updated` | main -> renderer | webContents.send | `onRemoteAccessUpdate(cb)` | `info: RemoteAccessInfo` |
 
 ### Program Board
@@ -339,8 +345,10 @@ Types used across both processes live in `src/shared/types.ts`:
 - `ProjectConfig` -- Project identity (id, dir, colorIndex)
 - `WorkspaceConfig` -- Workspace layout (id, name, projects, activeProjectId, geometry)
 - `PROJECT_COLORS` -- 8-entry color palette for per-project tinting (name, hue)
-- `RemoteAccessInfo` -- Remote tunnel state (status, tunnelUrl, token, error)
+- `RemoteAccessInfo` -- Remote access state (status, tunnelUrl, token, error, transport?)
 - `RemoteAccessStatus` -- `'inactive' | 'installing' | 'connecting' | 'active' | 'error'`
+- `RemoteTransport` -- `'cloudflare' | 'tailscale'` (which transport reaches the web-remote server)
+- `RemoteConnection` -- `{ url, token, autoConnect }` (a remembered remote host the desktop client auto-reconnects to; token encrypted at rest)
 - `IpcMessage` -- Named pipe message format (tabId, event, data)
 - `HookExecutionStatus` -- Hook execution progress (hookId, hookName, event, status, etc.)
 

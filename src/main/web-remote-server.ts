@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { app } from 'electron';
 import { WebSocketServer, WebSocket } from 'ws';
 import { PERMISSION_FLAGS } from '@shared/types';
+import { genToken } from '@shared/token';
 import type { TabManager } from './tab-manager';
 import type { PtyManager } from './pty-manager';
 import type { AppState, WirePtyToTabFn } from './ipc-handlers';
@@ -30,6 +31,8 @@ export interface WebRemoteServerDeps {
    * existing remote tests construct without it (capture is then a no-op).
    */
   captureDir?: string;
+  /** Stable access token to use; a random one is generated when omitted. */
+  token?: string;
 }
 
 // Maps file extensions to Content-Type headers
@@ -54,7 +57,7 @@ interface AuthenticatedSocket {
 }
 
 export class WebRemoteServer {
-  private readonly token: string;
+  private token: string;
   private readonly deps: WebRemoteServerDeps;
   private httpServer: http.Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -62,13 +65,24 @@ export class WebRemoteServer {
 
   constructor(deps: WebRemoteServerDeps) {
     this.deps = deps;
-    // 6-character alphanumeric code
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    this.token = Array.from({ length: 6 }, () => chars[crypto.randomInt(0, chars.length)]).join('');
+    this.token = deps.token ?? genToken();
   }
 
   get accessToken(): string {
     return this.token;
+  }
+
+  /**
+   * Rotate the access token in place and drop all connected clients, forcing
+   * them to re-authenticate with the new code. Does not restart the transport,
+   * so the tunnel/tailnet URL is unchanged.
+   */
+  setToken(token: string): void {
+    this.token = token;
+    for (const client of this.clients) {
+      try { client.ws.close(); } catch { /* already closing */ }
+    }
+    this.clients.clear();
   }
 
   /** Start the server. Pass 0 to let the OS pick a free port. Returns the actual port. */

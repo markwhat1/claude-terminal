@@ -11,6 +11,8 @@ interface StartupDialogProps {
   onCancel?: () => void;
   title?: string;
   hidePermissions?: boolean;
+  /** When set, shows a "Connect to a remote session" entry. */
+  onConnectRemote?: () => void;
 }
 
 const PERMISSION_OPTIONS: { value: PermissionMode; label: string }[] = [
@@ -20,7 +22,7 @@ const PERMISSION_OPTIONS: { value: PermissionMode; label: string }[] = [
   { value: 'default', label: 'Default' },
 ];
 
-export default function StartupDialog({ onStart, onCancel, title = 'Claude Terminal', hidePermissions }: StartupDialogProps) {
+export default function StartupDialog({ onStart, onCancel, title = 'Claude Terminal', hidePermissions, onConnectRemote }: StartupDialogProps) {
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
   const [selectedDir, setSelectedDir] = useState<string | null>(null);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('bypassPermissions');
@@ -137,6 +139,12 @@ export default function StartupDialog({ onStart, onCancel, title = 'Claude Termi
         <Button className="w-full" disabled={!selectedDir} onClick={handleStart}>
           Start
         </Button>
+
+        {onConnectRemote && (
+          <Button variant="ghost" size="sm" className="w-full text-muted-foreground" onClick={onConnectRemote}>
+            Connect to a remote session
+          </Button>
+        )}
       </DialogContent>
     </Dialog>
   );
