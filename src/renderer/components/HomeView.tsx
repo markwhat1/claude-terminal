@@ -58,6 +58,7 @@ import {
   type ClaudeQueryLine,
 } from '@shared/home-copy';
 import { rankItems } from '@shared/rank-items';
+import { settleClassForId as computeSettleClass } from '@shared/settle-class';
 import {
   applyReroll,
   parkHero,
@@ -855,32 +856,13 @@ export default function HomeView({
     }
   }, [closedRecent, displayedClosed]);
 
-  // Build a lookup of recent-close records by item id so we can annotate
-  // items with settle classes in O(1). The lookup is rebuilt whenever
-  // recentCloses changes.
-  const recentCloseMap = useMemo(() => {
-    const map = new Map<string, ClosedRecord>();
-    for (const rec of recentCloses) {
-      map.set(rec.id, rec);
-    }
-    return map;
-  }, [recentCloses]);
-
-  // Compute the settle class for a given item id (M8b-i, 1.5 / M13).
-  // Returns null when prefers-reduced-motion is active (count still ticks).
-  // Three tiers (highest first):
-  //   settle-avoidance: M13 overlay, card had an avoidance category (louder beat).
-  //   settle-decided:   Phase-1 louder tier, decided-and-worked close.
-  //   settle-ordinary:  Phase-1 ordinary settle.
+  // Compute the settle class for a given item id (M8b-i, 1.5 / M13). The tier
+  // logic lives in the pure @shared/settle-class module so production and tests
+  // share one implementation; HomeView only supplies the recent-close list and
+  // the matchMedia-derived reduced-motion flag at call time.
   const settleClassForId = useCallback(
-    (id: string): 'settle-ordinary' | 'settle-decided' | 'settle-avoidance' | null => {
-      const rec = recentCloseMap.get(id);
-      if (!rec) return null;
-      if (prefersReducedMotion()) return null;
-      if (rec.avoidanceClose === true) return 'settle-avoidance';
-      return rec.decidedAndWorked ? 'settle-decided' : 'settle-ordinary';
-    },
-    [recentCloseMap],
+    (id: string) => computeSettleClass(id, recentCloses, prefersReducedMotion()),
+    [recentCloses],
   );
 
   // Map board cards to items once per state change.

@@ -3,6 +3,8 @@
  * (from src/preload.ts) but communicates over WebSocket instead of Electron IPC.
  */
 import type { Tab, RemoteAccessInfo, ProjectConfig, WorkspaceConfig } from '../shared/types';
+import type { ClaudeQueryLine } from '../shared/home-copy';
+import type { InjectStatus } from '../shared/injection';
 
 type PtyDataCallback = (tabId: string, data: string) => void;
 type PtyResizedCallback = (tabId: string, cols: number, rows: number) => void;
@@ -435,6 +437,18 @@ export class WebSocketBridge {
       // shape but are never wired to a real send from the web client.)
       getProgramBoardState: async (): Promise<unknown> => null,
       onProgramBoardState: (_callback: (state: unknown) => void): (() => void) => () => {},
+
+      // Claude injection (M10c channel pair; M13 parity stubs). injectQuery
+      // creates a tab and arms a pending injection in MAIN on the host machine,
+      // so it is DESKTOP-ONLY (Home is desktop-only in Phase 1). It THROWS,
+      // mirroring createShellTab above, so a missed disabled-state fails loudly
+      // rather than silently no-oping. onInjectStatus is a listener registration;
+      // it returns a no-op cleanup like the other on* stubs (no host status feed
+      // reaches a remote client).
+      injectQuery: async (_payload: { explicitCwd?: string; query: ClaudeQueryLine; projectId?: string | null }): Promise<string> => {
+        throw new Error('injectQuery is not available over remote');
+      },
+      onInjectStatus: (_callback: (status: InjectStatus) => void): (() => void) => () => {},
     };
   }
 }

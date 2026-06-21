@@ -1,5 +1,8 @@
 /**
- * M13: Tests for the avoidance-category settle tier in HomeView.
+ * M13: Tests for the avoidance-category settle tier.
+ *
+ * These import the PRODUCTION settleClassForId from @shared/settle-class, the
+ * same module HomeView uses, so they guard real behavior rather than a copy.
  *
  * When a ClosedRecord has avoidanceClose:true, settleClassForId returns
  * 'settle-avoidance' (the louder, still-motion-safe beat). This is distinct
@@ -15,31 +18,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import React from 'react';
 import type { ClosedRecord } from '@shared/program-board-state';
-
-// ---------------------------------------------------------------------------
-// settleClassForId extracted as a pure test helper
-//
-// The function lives inside HomeView's component body. Rather than mounting
-// the full HomeView (which requires extensive props), we extract and test the
-// classification logic as a pure function via the same inputs HomeView uses.
-// ---------------------------------------------------------------------------
-
-/** The pure settle-class logic, mirroring HomeView's settleClassForId. */
-function settleClassForId(
-  id: string,
-  recentCloses: ClosedRecord[],
-  prefersReducedMotion: boolean,
-): 'settle-ordinary' | 'settle-decided' | 'settle-avoidance' | null {
-  const rec = recentCloses.find((r) => r.id === id);
-  if (!rec) return null;
-  if (prefersReducedMotion) return null;
-  if (rec.avoidanceClose === true) return 'settle-avoidance';
-  if (rec.decidedAndWorked) return 'settle-decided';
-  return 'settle-ordinary';
-}
+// Import the PRODUCTION settle-class function. HomeView imports the same symbol
+// from this module, so these tests now guard real behavior instead of a copy.
+import { settleClassForId } from '@shared/settle-class';
 
 // ---------------------------------------------------------------------------
 // Tests
