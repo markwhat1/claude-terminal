@@ -14,6 +14,7 @@ import { InjectionOverlayHost } from './components/InjectionOverlayHost';
 import type { InjectionRetryPayload } from './hooks/useInjectionStatus';
 import type { ProgramBoardState, ProgramBoardBroadcast, ClosedRecord } from '../shared/program-board-state';
 import { resolvePreferredPowershell } from '../shared/dashboard-ui-helpers';
+import type { ClaudeQueryLine } from '../shared/home-copy';
 import { destroyTerminal } from './components/terminalCache';
 import StatusBar from './components/StatusBar';
 import ProjectSidebar from './components/ProjectSidebar';
@@ -152,6 +153,22 @@ export default function App() {
     setTabs((prev) => [...prev.filter((t) => t.id !== tab.id), tab]);
     setActiveTabId(tab.id);
     await window.claudeTerminal.switchTab(tab.id);
+  }, [workspaceDir]);
+
+  // M10d: open Claude in the hero program's own repo with the canned query typed
+  // in. Resolves the absolute cwd from workspaceDir + repo slug (same pattern as
+  // handleOpenPowerShellInRepo). Calls injectQuery then sets the active tab.
+  const handleOpenClaudeWithQuery = useCallback(async (query: ClaudeQueryLine, repo: string | null) => {
+    const cwd = repo && workspaceDir
+      ? `${workspaceDir.replace(/[\\/]$/, '')}/${repo}`
+      : undefined;
+    const tabId = await window.claudeTerminal.injectQuery({
+      explicitCwd: cwd,
+      query,
+      projectId: activeProjectIdRef.current ?? undefined,
+    });
+    setActiveTabId(tabId);
+    await window.claudeTerminal.switchTab(tabId);
   }, [workspaceDir]);
 
   // M10c: remember the last injection payload per spawning tab so the failed-start
@@ -706,6 +723,7 @@ export default function App() {
               projects={projects}
               handleSelectTab={handleSelectTab}
               onOpenPowerShell={handleOpenPowerShellInRepo}
+              onOpenClaudeWithQuery={handleOpenClaudeWithQuery}
               onCopy={handleCopyToClipboard}
               onOpenExternal={handleOpenExternal}
               onRetry={loadProgramBoard}

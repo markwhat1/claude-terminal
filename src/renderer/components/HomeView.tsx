@@ -1,14 +1,20 @@
 /**
- * HomeView: the always-on dashboard Home surface (PLAN M8a, Phase 0 read-only).
+ * HomeView: the always-on dashboard Home surface (PLAN M8a / M10d).
  *
  * PURE presentational component. It takes ALL data and handlers as props and
  * NEVER references the host IPC bridge (a grep guard enforces this, 2.6).
  * App.tsx owns the IPC read, the subscription, and the mapper; this component
  * only renders and calls the handlers it is given.
  *
- * The Phase-0 hero PRIMARY action opens a PowerShell into the hero repo so one
- * keystroke starts work (3.2). Copy is the quiet secondary (3.3). The heavier
- * Claude injection lands in M10c.
+ * M10d hero PRIMARY action: Claude injection (via onOpenClaudeWithQuery) for
+ * decision/draft items (draftFirstVersion, openToDecide, reviewTodos,
+ * summarizeChanges). The onOpenPowerShell affordance stays as a sub-dominant
+ * secondary for those items. For openPowerShell items (needs-CADDC02), the
+ * PowerShell opener remains the full-weight primary.
+ *
+ * Three-affordance budget (1.1): Claude-primary items have 3 buttons (claude,
+ * powershell, copy); openPowerShell items have 2 (powershell, copy). Only one
+ * button carries bg-attention per card (6.3).
  *
  * Layout fills data-terminal-area and owns its internal scroll (6.1). Three
  * dominance levels bound to concrete classes (6.2). One bg-attention accent on
@@ -39,6 +45,7 @@ import {
   pickPrimaryAction,
   heroHeadline,
   composeCopy,
+  composeClaudeQuery,
   ACTION_LABELS,
   HOME_COPY,
   needsYouLine,
@@ -50,6 +57,7 @@ import {
   pullForwardCandidate,
   NEEDS_YOU_ROW_CAP,
   type KnownActionId,
+  type ClaudeQueryLine,
 } from '@shared/home-copy';
 
 // ---------------------------------------------------------------------------
@@ -182,8 +190,19 @@ export interface HomeViewProps {
    * Optional for backward compatibility; defaults to a no-op.
    */
   handleSelectTab?: (tabId: string) => void;
-  /** Open a PowerShell into a repo (the Phase-0 hero primary action). */
+  /**
+   * Open a PowerShell into a repo (secondary affordance for Claude-primary
+   * items; remains the primary for openPowerShell/needs-CADDC02 items, 3.2).
+   */
   onOpenPowerShell: (repo: string | null) => void;
+  /**
+   * Open a Claude session with the composed canned query (M10d primary for
+   * decision/draft items). The query argument is a branded ClaudeQueryLine so
+   * the PHI boundary is enforced at the type level (3.4). The repo argument is
+   * the hero program's repos[0] slug; App.tsx resolves the absolute cwd from
+   * workspaceDir + repo.
+   */
+  onOpenClaudeWithQuery?: (query: ClaudeQueryLine, repo: string | null) => void;
   /** Copy an inert display string to the clipboard. */
   onCopy: (text: string) => void;
   /** Open a feed url externally (routed to the host openExternal in App). */
@@ -253,6 +272,7 @@ interface HeroProps {
   now: Date;
   primaryRef: React.RefObject<HTMLButtonElement | null>;
   onOpenPowerShell: (repo: string | null) => void;
+  onOpenClaudeWithQuery?: (query: ClaudeQueryLine, repo: string | null) => void;
   onCopy: (text: string) => void;
   onOpenExternal: (url: string) => void;
   /**
@@ -264,16 +284,39 @@ interface HeroProps {
   settleClass: 'settle-ordinary' | 'settle-decided' | null;
 }
 
-function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal, settleClass }: HeroProps) {
+/**
+ * Returns true when the given action should route to Claude injection (M10d).
+ *
+ * All actions EXCEPT openPowerShell are Claude-appropriate: they involve
+ * reading/writing files in the repo and are well-suited to a Claude session.
+ * openPowerShell is reserved for needs-CADDC02 items that genuinely require
+ * a live shell (not a Claude session).
+ */
+function isClaudePrimaryAction(action: KnownActionId): boolean {
+  return action !== 'openPowerShell';
+}
+
+function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, onCopy, onOpenExternal, settleClass }: HeroProps) {
   const action: KnownActionId = pickPrimaryAction(hero);
   const headline = heroHeadline(hero, action);
   const repo = hero.project; // repos[0], the cwd target.
-  // The Phase-0 primary always opens a shell in the hero repo (3.2). The action
-  // id selects only the LABEL; the behavior is the shell start.
   const label = ACTION_LABELS[action];
   // A primary is constructible only when there is a resolvable repo (6.3).
   const hasPrimary = repo !== null && repo !== '';
   const copyText = composeCopy(hero);
+  // Claude injection is the primary for decision/draft items (M10d). The
+  // openPowerShell action stays as the primary only for needs-CADDC02 items.
+  const useClaudePrimary = hasPrimary && isClaudePrimaryAction(action) && !!onOpenClaudeWithQuery;
+
+  // Build the Claude query once for this render (branded string, no PHI).
+  const claudeQuery: ClaudeQueryLine | null = useClaudePrimary
+    ? composeClaudeQuery({
+        action,
+        programSlug: hero.slug,
+        programName: hero.title,
+        kind: hero.kind,
+      })
+    : null;
 
   // Static map so Tailwind's JIT sees the literal band classes (4.3). The
   // capped age band is the ONLY heat signal on the hero (1.4).
@@ -326,16 +369,7 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal, 
         )}
       </CardContent>
       <CardFooter className="gap-2">
-        {hasPrimary ? (
-          <Button
-            ref={primaryRef}
-            className="bg-attention text-attention-foreground hover:bg-attention/90"
-            data-testid="home-hero-primary"
-            onClick={() => onOpenPowerShell(repo)}
-          >
-            {label}
-          </Button>
-        ) : (
+        {!hasPrimary ? (
           // No-action fallback (6.3): a Copy-only hero, NEVER a disabled primary
           // in the most dominant pixel.
           <Button
@@ -346,16 +380,54 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal, 
           >
             Copy
           </Button>
-        )}
-        {hasPrimary && (
-          <Button
-            variant="ghost"
-            size="sm"
-            data-testid="home-hero-copy"
-            onClick={() => onCopy(copyText)}
-          >
-            Copy
-          </Button>
+        ) : useClaudePrimary ? (
+          // Claude-primary: full-weight Claude injection button (M10d, 1.1).
+          <>
+            <Button
+              ref={primaryRef}
+              className="bg-attention text-attention-foreground hover:bg-attention/90"
+              data-testid="home-hero-primary"
+              onClick={() => onOpenClaudeWithQuery!(claudeQuery!, repo)}
+            >
+              {label}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="home-hero-powershell"
+              onClick={() => onOpenPowerShell(repo)}
+            >
+              Open shell
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="home-hero-copy"
+              onClick={() => onCopy(copyText)}
+            >
+              Copy
+            </Button>
+          </>
+        ) : (
+          // openPowerShell primary: shell is the right affordance for this item.
+          <>
+            <Button
+              ref={primaryRef}
+              className="bg-attention text-attention-foreground hover:bg-attention/90"
+              data-testid="home-hero-primary"
+              onClick={() => onOpenPowerShell(repo)}
+            >
+              {label}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="home-hero-copy"
+              onClick={() => onCopy(copyText)}
+            >
+              Copy
+            </Button>
+          </>
         )}
       </CardFooter>
       {hasPrimary && (
@@ -363,7 +435,9 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal, 
           className="px-6 text-xs text-muted-foreground"
           data-testid="home-hero-helper"
         >
-          Open a shell in {repo}
+          {useClaudePrimary
+            ? `Open Claude in ${repo}`
+            : `Open a shell in ${repo}`}
         </p>
       )}
     </Card>
@@ -464,6 +538,7 @@ interface CaughtUpSurfaceProps {
   items: DashboardItem[];
   pausedCount: number;
   onOpenPowerShell: (repo: string | null) => void;
+  onOpenClaudeWithQuery?: (query: ClaudeQueryLine, repo: string | null) => void;
   onCopy: (text: string) => void;
   onOpenExternal: (url: string) => void;
 }
@@ -482,6 +557,7 @@ function CaughtUpSurface({
   items,
   pausedCount,
   onOpenPowerShell,
+  onOpenClaudeWithQuery,
   onCopy,
   onOpenExternal,
 }: CaughtUpSurfaceProps) {
@@ -534,6 +610,7 @@ function CaughtUpSurface({
               now={new Date()}
               primaryRef={pullPrimaryRef}
               onOpenPowerShell={onOpenPowerShell}
+              onOpenClaudeWithQuery={onOpenClaudeWithQuery}
               onCopy={onCopy}
               onOpenExternal={onOpenExternal}
               settleClass={null}
@@ -591,6 +668,7 @@ export default function HomeView({
   projects = [],
   handleSelectTab = () => undefined,
   onOpenPowerShell,
+  onOpenClaudeWithQuery,
   onCopy,
   onOpenExternal,
   onRetry,
@@ -774,6 +852,7 @@ export default function HomeView({
           items={items}
           pausedCount={pausedCount}
           onOpenPowerShell={onOpenPowerShell}
+          onOpenClaudeWithQuery={onOpenClaudeWithQuery}
           onCopy={onCopy}
           onOpenExternal={onOpenExternal}
         />
@@ -813,6 +892,7 @@ export default function HomeView({
           now={now}
           primaryRef={primaryRef}
           onOpenPowerShell={onOpenPowerShell}
+          onOpenClaudeWithQuery={onOpenClaudeWithQuery}
           onCopy={onCopy}
           onOpenExternal={onOpenExternal}
           settleClass={heroSettle}

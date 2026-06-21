@@ -376,9 +376,16 @@ describe('M8a: no-action fallback', () => {
 // 9. Phase-0 primary opens a shell; helper text names the repo; copy payload
 // ---------------------------------------------------------------------------
 
+// M8a Phase-0 behavior (retained for backward compatibility: when
+// onOpenClaudeWithQuery is not provided the primary falls back to PowerShell).
+// For the M10d wired behavior see HomeView-M10d.test.tsx.
 describe('M8a: Phase-0 primary action + copy', () => {
-  it('the primary opens a shell in the hero repo and the helper text names it', () => {
+  it('without onOpenClaudeWithQuery, the primary falls back to a shell open (backward compat)', () => {
+    // When onOpenClaudeWithQuery is NOT provided, draftFirstVersion items fall
+    // back to the PowerShell primary so callers that have not yet wired up
+    // M10d still work.
     const onOpenPowerShell = vi.fn();
+    // Intentionally NOT passing onOpenClaudeWithQuery.
     renderReady('time-sensitive.json', { onOpenPowerShell });
     const primary = screen.getByTestId('home-hero-primary');
     fireEvent.click(primary);
@@ -422,8 +429,10 @@ describe('M8a: keyboard floor', () => {
   });
 
   it('the hero primary Enter-activates', () => {
+    // Use a needs-CADDC02 card so the primary is still PowerShell-based for
+    // this legacy keyboard test (M10d cards route to onOpenClaudeWithQuery).
     const onOpenPowerShell = vi.fn();
-    renderReady('time-sensitive.json', { onOpenPowerShell });
+    renderReady('fresh-with-needs-you.json', { onOpenPowerShell });
     const primary = screen.getByTestId('home-hero-primary') as HTMLButtonElement;
     primary.focus();
     expect(document.activeElement).toBe(primary);
