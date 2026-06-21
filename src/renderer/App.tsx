@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PermissionMode, Tab, RemoteAccessInfo, HookExecutionStatus, ProjectConfig } from '../shared/types';
 import { PROJECT_COLORS, HOME_TAB_ID } from '../shared/types';
+import { selectActiveView } from '../shared/dashboard-helpers';
 import { applyTabUpdate } from './appender';
 import type { ShellOption } from '../shared/platform';
 import { getAllShellOptions } from '../shared/platform';
@@ -8,6 +9,7 @@ import { ShellContext } from './shell-context';
 import StartupDialog from './components/StartupDialog';
 import TabBar from './components/TabBar';
 import Terminal from './components/Terminal';
+import HomeView from './components/HomeView';
 import { destroyTerminal } from './components/terminalCache';
 import StatusBar from './components/StatusBar';
 import ProjectSidebar from './components/ProjectSidebar';
@@ -118,6 +120,9 @@ export default function App() {
 
   const handleSelectTab = useCallback(async (tabId: string) => {
     setActiveTabId(tabId);
+    // Home is a renderer-only synthetic view. It never enters TabManager,
+    // so there is no IPC switchTab call for it.
+    if (tabId === HOME_TAB_ID) return;
     // Remember this tab as the last active for its project
     const tab = tabsRef.current.find(t => t.id === tabId);
     if (tab) {
@@ -582,6 +587,9 @@ export default function App() {
               isVisible={tab.id === activeTabId}
             />
           ))}
+          {selectActiveView(activeTabId, homeTabId, tabs) === 'home' && (
+            <HomeView />
+          )}
         </div>
         <StatusBar tabs={activeProjectTabs} hookStatus={hookStatus} />
       </div>
