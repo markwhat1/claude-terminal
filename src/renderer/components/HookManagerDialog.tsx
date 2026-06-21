@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2, ChevronUp, ChevronDown, Zap } from 'lucide-react';
 import type { RepoHook, RepoHookConfig, HookCommand, HookEvent } from '../../shared/types';
 import { HOOK_EVENTS } from '../../shared/types';
+import { generateId } from '@shared/dashboard-ui-helpers';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -15,13 +16,9 @@ interface HookManagerDialogProps {
   onClose: () => void;
 }
 
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 10);
-}
-
 function createEmptyHook(): RepoHook {
   return {
-    id: generateId(),
+    id: generateId('hook'),
     name: 'New Hook',
     event: 'worktree:created',
     commands: [{ path: '.', command: '' }],

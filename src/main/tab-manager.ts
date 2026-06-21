@@ -1,15 +1,12 @@
 import { Tab, TabStatus, TabType } from '@shared/types';
 import { getShellOption } from '@shared/platform';
-
-function generateId(): string {
-  return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+import { generateId as generateSharedId } from '@shared/dashboard-ui-helpers';
 
 export class TabManager {
   private tabs = new Map<string, Tab>();
   private activeTabId: string | null = null;
   createTab(cwd: string, worktree: string | null, type: TabType = 'claude', savedName?: string, projectId = '', sourceBranch: string | null = null, shellType?: string): Tab {
-    const id = generateId();
+    const id = generateSharedId('tab');
     let defaultName: string;
     if (type === 'shell' && shellType) {
       const option = getShellOption(process.platform, shellType);

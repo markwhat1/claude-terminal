@@ -12,6 +12,7 @@ export function getAllShellOptions(platform: string): ShellOption[] {
   switch (platform) {
     case 'win32':
       return [
+        { id: 'pwsh', label: 'PowerShell 7', command: 'pwsh.exe', args: [], defaultName: 'PowerShell 7', icon: 'terminal' },
         { id: 'powershell', label: 'PowerShell', command: 'powershell.exe', args: [], defaultName: 'PowerShell', icon: 'terminal' },
         { id: 'wsl', label: 'WSL', command: 'wsl.exe', args: [], defaultName: 'WSL', icon: 'penguin' },
         { id: 'cmd', label: 'Command Prompt', command: 'cmd.exe', args: [], defaultName: 'CMD', icon: 'terminal' },
