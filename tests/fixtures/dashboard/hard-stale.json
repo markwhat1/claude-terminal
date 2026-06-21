@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-06-20T14:00:00",
+  "programs": [
+    {
+      "slug": "cad-staff-portal",
+      "name": "CAD Staff Portal",
+      "repos": ["cad-portal"],
+      "sources": ["override"],
+      "tags": ["needs-CADDC02"],
+      "time_sensitive": null,
+      "blocked_on": "Set the temp password env var, then run staff account sync.",
+      "paused": false,
+      "git": {
+        "last_commit": {
+          "sha": "abc1234",
+          "iso": "2026-06-19T10:00:00-06:00",
+          "msg": "feat: some work",
+          "repo": "cad-portal"
+        },
+        "age_days": 2,
+        "uncommitted": false,
+        "unmerged_branch": null
+      },
+      "dod": {
+        "met": 0,
+        "total": 3,
+        "gaps": ["merged", "deployed", "ci"]
+      },
+      "last_touched": "2026-06-19T10:00:00-06:00",
+      "lane": "blocked",
+      "age_color": "yellow",
+      "needs_you": true,
+      "needs_you_reasons": ["needs-CADDC02"]
+    }
+  ],
+  "suggested": []
+}

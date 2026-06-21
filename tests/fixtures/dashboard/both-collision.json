@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-06-21T01:00:00",
+  "programs": [
+    {
+      "slug": "incomplete-notes-decision",
+      "name": "Incomplete Notes",
+      "repos": ["clinical-notes", "infrastructure/cad-runner"],
+      "sources": ["override"],
+      "tags": ["needs-your-decision"],
+      "time_sensitive": null,
+      "blocked_on": "Claude Max-plan BAA decision required before proceeding.",
+      "paused": false,
+      "git": {
+        "last_commit": {
+          "sha": "59050b9",
+          "iso": "2026-06-19T22:03:26-06:00",
+          "msg": "feat(manifests): add debug-incident runner whitelist entry",
+          "repo": "infrastructure/cad-runner"
+        },
+        "age_days": 1,
+        "uncommitted": false,
+        "unmerged_branch": null
+      },
+      "dod": {
+        "met": 0,
+        "total": 1,
+        "gaps": ["portal Incomplete Notes surface live end to end"]
+      },
+      "last_touched": "2026-06-19T22:03:26-06:00",
+      "lane": "blocked",
+      "age_color": "green",
+      "needs_you": true,
+      "needs_you_reasons": [
+        "needs-your-decision",
+        "almost done: portal Incomplete Notes surface live end to end"
+      ]
+    }
+  ],
+  "suggested": []
+}

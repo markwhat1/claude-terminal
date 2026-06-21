@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-06-21T01:00:00",
+  "programs": [
+    {
+      "slug": "practice-reports",
+      "name": "Practice Reports",
+      "repos": ["practice-analytics"],
+      "sources": ["override"],
+      "tags": ["time-sensitive"],
+      "time_sensitive": "2026-06-23",
+      "blocked_on": "Watch the first live PHI sends on 2026-06-23.",
+      "paused": false,
+      "git": {
+        "last_commit": {
+          "sha": "dc4c5e5",
+          "iso": "2026-06-20T13:53:27-06:00",
+          "msg": "docs: ultracode session summary",
+          "repo": "practice-analytics"
+        },
+        "age_days": 0,
+        "uncommitted": false,
+        "unmerged_branch": null
+      },
+      "dod": {
+        "met": 0,
+        "total": 2,
+        "gaps": [
+          "2026-06-23 unscheduled send confirmed",
+          "2026-07-01 attrition send confirmed"
+        ]
+      },
+      "last_touched": "2026-06-20T13:53:27-06:00",
+      "lane": "blocked",
+      "age_color": "green",
+      "needs_you": true,
+      "needs_you_reasons": ["time-sensitive 2026-06-23"]
+    }
+  ],
+  "suggested": []
+}
