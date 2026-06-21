@@ -9,6 +9,28 @@ import type { Tab } from './types';
 import { HOME_TAB_ID } from './types';
 
 /**
+ * Determines which tab id to activate after a tab is removed.
+ *
+ * Rules (in order):
+ *   1. No remaining tabs: return homeId (blank-screen fix for the zero-tabs case).
+ *   2. A same-project tab exists in remaining: return the first one's id.
+ *   3. No same-project tab (tabs from other projects remain): return homeId
+ *      (blank-screen fix for the cross-project case).
+ *
+ * The homeId parameter lets callers supply their own sentinel, keeping this
+ * helper testable without importing HOME_TAB_ID directly.
+ */
+export function nextActiveOnRemove(
+  closingTab: Tab | undefined,
+  remaining: Tab[],
+  homeId: string,
+): string {
+  if (remaining.length === 0) return homeId;
+  const sameProject = remaining.filter((t) => t.projectId === closingTab?.projectId);
+  return sameProject.length > 0 ? sameProject[0].id : homeId;
+}
+
+/**
  * Determines which view to display given the current active tab id.
  *
  * Returns 'home' when activeTabId matches homeId, or when no real tab

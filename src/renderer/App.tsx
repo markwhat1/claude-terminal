@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PermissionMode, Tab, RemoteAccessInfo, HookExecutionStatus, ProjectConfig } from '../shared/types';
 import { PROJECT_COLORS, HOME_TAB_ID } from '../shared/types';
-import { selectActiveView } from '../shared/dashboard-helpers';
+import { selectActiveView, nextActiveOnRemove } from '../shared/dashboard-helpers';
 import { applyTabUpdate } from './appender';
 import type { ShellOption } from '../shared/platform';
 import { getAllShellOptions } from '../shared/platform';
@@ -376,9 +376,7 @@ export default function App() {
         const remaining = prev.filter((t) => t.id !== tabId);
         setActiveTabId((prevActive) => {
           if (prevActive === tabId) {
-            if (remaining.length === 0) return null;
-            const sameProject = remaining.filter((t) => t.projectId === closingTab?.projectId);
-            return sameProject.length > 0 ? sameProject[0].id : null;
+            return nextActiveOnRemove(closingTab, remaining, homeTabId);
           }
           return prevActive;
         });
