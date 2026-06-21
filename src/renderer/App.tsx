@@ -9,7 +9,9 @@ import { ShellContext } from './shell-context';
 import StartupDialog from './components/StartupDialog';
 import TabBar from './components/TabBar';
 import Terminal from './components/Terminal';
-import HomeView from './components/HomeView';
+import HomeView, { type HomeLoadStatus } from './components/HomeView';
+import type { ProgramBoardState } from '../shared/program-board-state';
+import { resolvePreferredPowershell } from '../shared/dashboard-ui-helpers';
 import { destroyTerminal } from './components/terminalCache';
 import StatusBar from './components/StatusBar';
 import ProjectSidebar from './components/ProjectSidebar';
@@ -79,10 +81,71 @@ export default function App() {
     tabId: string; worktreeName: string; clean: boolean; changesCount: number;
   } | null>(null);
 
+  // Program-board state for the Home dashboard. App owns the IPC read and the
+  // subscription; HomeView is pure and receives this as a prop.
+  const [programBoardState, setProgramBoardState] = useState<ProgramBoardState | null>(null);
+  const [homeLoadStatus, setHomeLoadStatus] = useState<HomeLoadStatus>('loading');
+  // The resolved path is surfaced in the not-running and error states; the
+  // reader returns it inside the state, but Phase 0 keeps a stable label.
+  const PROGRAM_BOARD_PATH = 'C:\\Users\\Mark\\Claude-Code\\dashboard\\state.json';
+
   // Fetch available shells (filter to installed ones) and default shell preference
   useEffect(() => {
     window.claudeTerminal.getAvailableShells().then(setAvailableShells).catch(() => {});
     window.claudeTerminal.getDefaultShell().then(setDefaultShell).catch(() => {});
+  }, []);
+
+  // Program-board: read once on mount and subscribe to the broadcast. A
+  // successful read sets 'ready'; a failure with no prior state sets 'error'.
+  const loadProgramBoard = useCallback(async () => {
+    try {
+      const state = (await window.claudeTerminal.getProgramBoardState()) as ProgramBoardState | null;
+      if (state) {
+        setProgramBoardState(state);
+        setHomeLoadStatus('ready');
+      } else {
+        // No state and no prior state: hard error. If we already have last-good,
+        // keep it (4.5) and stay ready.
+        setHomeLoadStatus((prev) => (prev === 'ready' ? 'ready' : 'error'));
+      }
+    } catch {
+      setHomeLoadStatus((prev) => (prev === 'ready' ? 'ready' : 'error'));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProgramBoard();
+    const cleanup = window.claudeTerminal.onProgramBoardState((state) => {
+      // Last-good preference (4.5): only replace when a real state arrives.
+      if (state) {
+        setProgramBoardState(state as ProgramBoardState);
+        setHomeLoadStatus('ready');
+      }
+    });
+    return cleanup;
+  }, [loadProgramBoard]);
+
+  const handleOpenPowerShellInRepo = useCallback(async (repo: string | null) => {
+    // Resolve the preferred PowerShell from the installed shells (pwsh else 5.1).
+    const shells = availableShellsRef.current;
+    const hasPwsh = shells.some((s) => s.id === 'pwsh');
+    const shellId = resolvePreferredPowershell(hasPwsh);
+    // The hero repo is a relative workspace slug; join to the workspace root.
+    const cwd = repo && workspaceDir
+      ? `${workspaceDir.replace(/[\\/]$/, '')}/${repo}`
+      : undefined;
+    const tab = await window.claudeTerminal.createShellTab(shellId, undefined, cwd);
+    setTabs((prev) => [...prev.filter((t) => t.id !== tab.id), tab]);
+    setActiveTabId(tab.id);
+    await window.claudeTerminal.switchTab(tab.id);
+  }, [workspaceDir]);
+
+  const handleCopyToClipboard = useCallback((text: string) => {
+    void navigator.clipboard?.writeText(text);
+  }, []);
+
+  const handleOpenExternal = useCallback((url: string) => {
+    window.claudeTerminal.openExternal(url);
   }, []);
 
   // Filter tabs by active project
@@ -584,6 +647,8 @@ export default function App() {
           remoteInfo={remoteInfo}
           onActivateRemote={handleActivateRemote}
           onDeactivateRemote={handleDeactivateRemote}
+          onSelectHome={() => handleSelectTab(homeTabId)}
+          isHomeActive={activeTabId === homeTabId}
         />
         <div className="flex-1 relative overflow-hidden" data-terminal-area>
           {tabs.map((tab) => (
@@ -594,10 +659,23 @@ export default function App() {
             />
           ))}
           {selectActiveView(activeTabId, homeTabId, tabs) === 'home' && (
-            <HomeView />
+            <HomeView
+              programBoardState={programBoardState}
+              loadStatus={homeLoadStatus}
+              resolvedPath={PROGRAM_BOARD_PATH}
+              now={new Date()}
+              onOpenPowerShell={handleOpenPowerShellInRepo}
+              onCopy={handleCopyToClipboard}
+              onOpenExternal={handleOpenExternal}
+              onRetry={loadProgramBoard}
+            />
           )}
         </div>
-        <StatusBar tabs={activeProjectTabs} hookStatus={hookStatus} />
+        <StatusBar
+          tabs={activeProjectTabs}
+          hookStatus={hookStatus}
+          hideStatusCounts={activeTabId === homeTabId}
+        />
       </div>
       {showWorktreeDialog && (
         <WorktreeNameDialog

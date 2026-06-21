@@ -25,9 +25,15 @@ const hookColorMap: Record<string, string> = {
 interface StatusBarProps {
   tabs: Tab[];
   hookStatus?: { hookName: string; status: 'running' | 'done' | 'failed'; error?: string } | null;
+  /**
+   * When true (Home is active), the status-counts block early-returns so Home
+   * has a single working-count source (the needs-you header, 6.4). The
+   * keybinding-hint footer is kept.
+   */
+  hideStatusCounts?: boolean;
 }
 
-const StatusBar = React.memo(function StatusBar({ tabs, hookStatus }: StatusBarProps) {
+const StatusBar = React.memo(function StatusBar({ tabs, hookStatus, hideStatusCounts = false }: StatusBarProps) {
   const counts = new Map<TabStatus, number>();
   for (const tab of tabs) {
     counts.set(tab.status, (counts.get(tab.status) ?? 0) + 1);
@@ -36,11 +42,11 @@ const StatusBar = React.memo(function StatusBar({ tabs, hookStatus }: StatusBarP
   return (
     <div className="flex gap-4 px-3 py-0.5 bg-[hsl(var(--project-hue)_30%_18%)] text-muted-foreground text-xs min-h-[22px] items-center border-t border-border">
       <div className="flex gap-3 items-center">
-        {STATUS_ORDER.map(({ status, label }) => {
+        {!hideStatusCounts && STATUS_ORDER.map(({ status, label }) => {
           const count = counts.get(status);
           if (!count) return null;
           return (
-            <span key={status} className={cn('inline-flex items-center gap-1', statusColorMap[status])} title={label}>
+            <span key={status} className={cn('inline-flex items-center gap-1', statusColorMap[status])} title={label} data-testid="statusbar-count">
               <TabIndicator status={status} /> {count}
             </span>
           );

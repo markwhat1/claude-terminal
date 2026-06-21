@@ -28,6 +28,14 @@ interface TabBarProps {
   remoteInfo: RemoteAccessInfo;
   onActivateRemote: () => void;
   onDeactivateRemote: () => void;
+  /**
+   * Activate the synthetic Home view. The pill is NOT a member of tabs.
+   * Optional: the remote web client (Home is desktop-only) omits it, so the
+   * pill is not rendered there.
+   */
+  onSelectHome?: () => void;
+  /** Whether Home is the active surface (highlights the pill). */
+  isHomeActive?: boolean;
 }
 
 export default function TabBar({
@@ -50,6 +58,8 @@ export default function TabBar({
   remoteInfo,
   onActivateRemote,
   onDeactivateRemote,
+  onSelectHome,
+  isHomeActive,
 }: TabBarProps) {
   const shellOptions = useShellOptions();
   const dragTabId = useRef<string | null>(null);
@@ -100,6 +110,26 @@ export default function TabBar({
       'flex bg-[hsl(var(--project-hue)_30%_18%)] border-b border-border min-h-[36px] items-center px-1 [-webkit-app-region:drag]',
       isDragging && '[-webkit-app-region:no-drag]'
     )}>
+      {/* Home entry pill: a NON-TAB affordance at the LEFT of the bar. It is
+          not a member of `tabs`, has no status glyph / close / rename / drag,
+          and carries ZERO keybinding (6.4). Desktop-only: the remote client
+          omits onSelectHome so the pill is not rendered. */}
+      {onSelectHome && (
+        <button
+          type="button"
+          className={cn(
+            'px-3 py-1 text-xs rounded-sm mr-1 [-webkit-app-region:no-drag] shrink-0',
+            isHomeActive
+              ? 'text-foreground bg-[hsl(var(--project-hue)_30%_25%)]'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+          data-testid="home-entry-pill"
+          title="Home"
+          onClick={onSelectHome}
+        >
+          Home
+        </button>
+      )}
       <div className="flex flex-1 min-w-0 overflow-hidden items-center">
         {tabs.map((tab, index) => (
           <Tab
