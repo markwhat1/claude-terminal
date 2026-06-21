@@ -63,6 +63,7 @@ import {
   parkHero,
   type ParkedHeroSlot,
 } from '@shared/hero-reroll';
+import { matchKeybinding } from '@/keybindings';
 
 // ---------------------------------------------------------------------------
 // Idle-floor constant (M8b-iii, 5.2)
@@ -213,6 +214,20 @@ export interface HomeViewProps {
   onOpenExternal: (url: string) => void;
   /** Retry the program-board read after a hard error. */
   onRetry: () => void;
+  /**
+   * M12: persist one captured todo. App.tsx wires this to the capture:append
+   * IPC (which validates + persists server-side). The single argument is the
+   * raw captured text, the only field set at capture time (PLAN-PHASE-2-3 line
+   * 53). The text is DISPLAY-ONLY and is never an action payload. Optional for
+   * backward compatibility; when omitted the bar still opens but Enter no-ops.
+   */
+  onCapture?: (text: string) => void;
+  /**
+   * M12: the quiet Inbox(N) glance number, the open-todo count from the store.
+   * Rendered as a calm muted number, NEVER a red badge (PLAN-PHASE-2-3 line 45).
+   * Optional; defaults to 0.
+   */
+  inboxCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +319,9 @@ interface HeroProps {
  * a live shell (not a Claude session).
  */
 function isClaudePrimaryAction(action: KnownActionId): boolean {
-  return action !== 'openPowerShell';
+  // openPowerShell is shell-routed; copyOnly (a captured todo) is Copy-only and
+  // must NEVER reach the Claude-injection path (PLAN.md 1.7 / M12).
+  return action !== 'openPowerShell' && action !== 'copyOnly';
 }
 
 function HeroCard({ hero, primaryRef, onOpenPowerShell, onOpenClaudeWithQuery, onCopy, onOpenExternal, settleClass, onReroll }: HeroProps) {
@@ -700,6 +717,69 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+// ---------------------------------------------------------------------------
+// CaptureBar (M12, one-gesture capture)
+// ---------------------------------------------------------------------------
+
+interface CaptureBarProps {
+  /** Whether the bar is open (visible). The input is ALWAYS mounted so the ref
+   *  is stable for synchronous focus; this only toggles visibility. */
+  open: boolean;
+  /** A ref to the input, focused SYNCHRONOUSLY by the keydown handler. */
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  /** Persist the typed text (App wires this to capture:append). */
+  onCapture?: (text: string) => void;
+  /** Close the bar (Escape, or after a successful capture). */
+  onClose: () => void;
+}
+
+/**
+ * The capture bar input. ALWAYS mounted (so inputRef is stable for the
+ * synchronous focus the keydown handler performs); hidden via a class when
+ * closed so the ref exists before the bar is opened.
+ *
+ * Enter persists with ONLY text set (PLAN-PHASE-2-3 line 53). The captured text
+ * is inert: it is handed to onCapture verbatim and is never an action payload.
+ * Escape closes without capturing.
+ */
+function CaptureBar({ open, inputRef, onCapture, onClose }: CaptureBarProps) {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const text = inputRef.current?.value ?? '';
+      const trimmed = text.trim();
+      if (trimmed.length === 0) return; // nothing to capture
+      onCapture?.(trimmed);
+      if (inputRef.current) inputRef.current.value = '';
+      onClose();
+    } else if (e.key === 'Escape') {
+      if (inputRef.current) inputRef.current.value = '';
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      data-testid={open ? 'home-capture-bar-open' : 'home-capture-bar-closed'}
+      className={cn(
+        'px-6 pt-4',
+        // Always mounted; visually hidden when closed so the input ref is stable
+        // for synchronous focus before the bar is first opened.
+        open ? 'block' : 'hidden',
+      )}
+    >
+      <input
+        ref={inputRef}
+        type="text"
+        data-testid="home-capture-input"
+        placeholder="Capture a thought, then Enter"
+        aria-label="Capture a thought"
+        onKeyDown={onKeyDown}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
+      />
+    </div>
+  );
+}
+
 export default function HomeView({
   programBoardState,
   loadStatus,
@@ -715,6 +795,8 @@ export default function HomeView({
   onCopy,
   onOpenExternal,
   onRetry,
+  onCapture,
+  inboxCount = 0,
 }: HomeViewProps) {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
@@ -723,6 +805,40 @@ export default function HomeView({
   useEffect(() => {
     regionRef.current?.focus();
   }, []);
+
+  // -------------------------------------------------------------------------
+  // M12: one-gesture capture bar.
+  //
+  // The input is ALWAYS mounted (captureInputRef is stable); the bar toggles
+  // visibility only. The chord handler opens the bar AND focuses the input
+  // SYNCHRONOUSLY in the same keydown tick (no await, no setTimeout), so the
+  // sub-2s activation axis is falsifiable: document.activeElement === input in
+  // the same tick as the keydown.
+  //
+  // HomeView owns the listener (rather than App.tsx routing through a prop) so
+  // the focus happens with no cross-component state round-trip. matchKeybinding
+  // is the shared, case-sensitive matcher: the registry entry is
+  // { mod:'ctrl+shift', key:'K' }, so a lowercase 'k' never opens the bar.
+  // -------------------------------------------------------------------------
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const captureInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const kb = matchKeybinding(e);
+      if (kb?.mod === 'ctrl+shift' && kb.key === 'K') {
+        e.preventDefault();
+        // Open AND focus synchronously in this same tick. setCaptureOpen schedules
+        // a re-render, but the input is already mounted, so focus() lands now.
+        setCaptureOpen(true);
+        captureInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const closeCapture = useCallback(() => setCaptureOpen(false), []);
 
   // Loss-aversion guard (1.5): the displayed closedRecent is frozen to the
   // session-high so 24h pruning never decrements it mid-session. The reader
@@ -1026,6 +1142,27 @@ export default function HomeView({
       data-testid="home-view"
       className="absolute inset-0 h-full w-full overflow-y-auto outline-none @container"
     >
+      {/* M12: the quiet Inbox(N) glance number. A calm muted count, NEVER a red
+          badge (PLAN-PHASE-2-3 line 45). It is a glance, not an alert. */}
+      <div className="flex justify-end px-6 pt-3">
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid="home-inbox-count"
+          title="Captured items waiting to triage"
+        >
+          {`Inbox(${inboxCount})`}
+        </span>
+      </div>
+
+      {/* M12: the capture bar. Always mounted (the input ref is stable for the
+          synchronous focus the chord handler performs); visibility toggles. */}
+      <CaptureBar
+        open={captureOpen}
+        inputRef={captureInputRef}
+        onCapture={onCapture}
+        onClose={closeCapture}
+      />
+
       {body}
       {/* The subordinate strip lives below the board content (6.4). */}
       <SessionStrip

@@ -170,6 +170,11 @@ export const claudeTerminalMock: ClaudeTerminalApi = {
   onInjectStatus: (_callback: (status: InjectStatus) => void): (() => void) =>
     noopCleanup(),
 
+  // Capture (M12, remote-enabled append + local count)
+  appendCapture: (_text: string): Promise<{ ok: boolean; count: number | null }> =>
+    Promise.resolve({ ok: true, count: 1 }),
+  getCaptureCount: (): Promise<number> => Promise.resolve(0),
+
   // Window title
   setWindowTitle: (_title: string): void => noop(),
 

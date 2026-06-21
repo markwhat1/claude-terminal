@@ -206,6 +206,8 @@ describe('registerIpcHandlers', () => {
       'instance:getHue',
       'program-board:getState',
       'claude:injectQuery',
+      'capture:append',
+      'capture:count',
     ];
     for (const channel of expectedHandlers) {
       expect(handlers.has(channel), `missing handler: ${channel}`).toBe(true);
@@ -716,6 +718,88 @@ describe('registerIpcHandlers', () => {
       // No file should exist in the default temp dir check (or anywhere reachable).
       // We just verify the handler doesn't throw and returns the view.
       expect(true).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // M12: capture:append + capture:count handlers (server-side validation)
+  // ---------------------------------------------------------------------------
+
+  describe('M12: capture:append + capture:count', () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ipc-capture-'));
+      handlers.clear();
+      listeners.clear();
+      vi.clearAllMocks();
+      deps = makeMockDeps();
+      deps.captureDir = tmpDir;
+      registerIpcHandlers(deps);
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function todosPath(): string {
+      return path.join(tmpDir, 'dashboard', 'todos.json');
+    }
+    function readItems(): Array<{ text: string }> {
+      if (!fs.existsSync(todosPath())) return [];
+      return JSON.parse(fs.readFileSync(todosPath(), 'utf-8')).items;
+    }
+
+    it('capture:append persists a valid capture and returns the new count', async () => {
+      const handler = handlers.get('capture:append')!;
+      const result = await handler({}, { text: 'call the lab about the crown' });
+      expect(result).toEqual({ ok: true, count: 1 });
+      expect(readItems().map((i) => i.text)).toEqual(['call the lab about the crown']);
+    });
+
+    it('capture:append writes under captureDir (userData), NOT the workspace git tree', () => {
+      const workspaceRoot = path.resolve(path.join(__dirname, '..', '..'));
+      expect(todosPath().startsWith(workspaceRoot)).toBe(false);
+    });
+
+    it('capture:append REJECTS an over-length capture server-side', async () => {
+      const handler = handlers.get('capture:append')!;
+      const result = await handler({}, { text: 'a'.repeat(2001) });
+      expect(result).toEqual({ ok: false, count: null });
+      expect(fs.existsSync(todosPath())).toBe(false);
+    });
+
+    it('capture:append REJECTS a non-string capture server-side', async () => {
+      const handler = handlers.get('capture:append')!;
+      const result = await handler({}, { text: 12345 });
+      expect(result).toEqual({ ok: false, count: null });
+      expect(fs.existsSync(todosPath())).toBe(false);
+    });
+
+    it('capture:append REJECTS a control-byte capture server-side', async () => {
+      const handler = handlers.get('capture:append')!;
+      const result = await handler({}, { text: 'wipe\x1b[2Jthis' });
+      expect(result).toEqual({ ok: false, count: null });
+      expect(fs.existsSync(todosPath())).toBe(false);
+    });
+
+    it('capture:count returns the open-item count', async () => {
+      const append = handlers.get('capture:append')!;
+      await append({}, { text: 'a' });
+      await append({}, { text: 'b' });
+      const count = await handlers.get('capture:count')!({});
+      expect(count).toBe(2);
+    });
+
+    it('capture handlers are inert (return safe values) when captureDir is not set', async () => {
+      handlers.clear();
+      const depsNoDir = makeMockDeps();
+      // captureDir intentionally omitted.
+      registerIpcHandlers(depsNoDir);
+      const appendResult = await handlers.get('capture:append')!({}, { text: 'x' });
+      expect(appendResult).toEqual({ ok: false, count: null });
+      const count = await handlers.get('capture:count')!({});
+      expect(count).toBe(0);
     });
   });
 });

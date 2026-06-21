@@ -8,6 +8,7 @@ import {
   type InjectStatus,
 } from './shared/injection';
 import type { ClaudeQueryLine } from './shared/home-copy';
+import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL } from './shared/capture';
 
 const api = {
   // Platform info
@@ -286,6 +287,15 @@ const api = {
       ipcRenderer.removeListener(CLAUDE_INJECT_STATUS_CHANNEL, handler);
     };
   },
+
+  // Capture (M12). appendCapture is REMOTE-ENABLED with server-side validation in
+  // MAIN; the renderer only ever sends inert { text }. The captured text is
+  // DISPLAY-ONLY (never an action payload). getCaptureCount drives the quiet
+  // Inbox(N) glance number (never a red badge).
+  appendCapture: (text: string): Promise<{ ok: boolean; count: number | null }> =>
+    ipcRenderer.invoke(CAPTURE_APPEND_CHANNEL, { text }),
+  getCaptureCount: (): Promise<number> =>
+    ipcRenderer.invoke(CAPTURE_COUNT_CHANNEL),
 };
 
 contextBridge.exposeInMainWorld('claudeTerminal', api);

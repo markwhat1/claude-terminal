@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 vi.mock('electron', () => ({
   app: { isPackaged: false },
@@ -168,6 +171,82 @@ describe('WebRemoteServer handleMessage', () => {
       await expect(sendMessage({ type: 'not:a:real:channel' })).resolves.toBeUndefined();
       const { log: mockLog } = await import('@main/logger');
       expect((mockLog as any).warn).toHaveBeenCalled();
+    });
+
+    it('capture:count is LOCAL-ONLY: handleMessage has no case for it', async () => {
+      // The explicit remote decision (PLAN.md 3.5 / AGENTS.md): capture:append is
+      // remote-enabled with validation, but the Inbox glance count stays local
+      // (Home is desktop-only in Phase 1). A future generic passthrough would
+      // break this test rather than the privacy boundary.
+      const { sendMessage } = createTestClient(server);
+      await expect(sendMessage({ type: 'capture:count' })).resolves.toBeUndefined();
+      const { log: mockLog } = await import('@main/logger');
+      expect((mockLog as any).warn).toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // M12: remote capture:append (REMOTE-ENABLED with SERVER-SIDE VALIDATION)
+  // -------------------------------------------------------------------------
+  describe('capture:append (remote, server-side validation)', () => {
+    let captureDir: string;
+
+    beforeEach(() => {
+      captureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-capture-'));
+      deps.captureDir = captureDir;
+      server = new WebRemoteServer(deps);
+    });
+
+    afterEach(() => {
+      fs.rmSync(captureDir, { recursive: true, force: true });
+    });
+
+    function todosPath(): string {
+      return path.join(captureDir, 'dashboard', 'todos.json');
+    }
+    function readItems(): Array<{ text: string }> {
+      if (!fs.existsSync(todosPath())) return [];
+      return JSON.parse(fs.readFileSync(todosPath(), 'utf-8')).items;
+    }
+
+    it('persists a valid capture and replies with the new count', async () => {
+      const { sendMessage, sentMessages } = createTestClient(server);
+      await sendMessage({ type: 'capture:append', text: 'call from the phone' });
+      expect(readItems().map((i) => i.text)).toEqual(['call from the phone']);
+      expect(sentMessages).toContainEqual({ type: 'capture:appended', ok: true, count: 1 });
+    });
+
+    it('writes under captureDir (userData), NOT the workspace git tree', () => {
+      const workspaceRoot = path.resolve(path.join(__dirname, '..', '..'));
+      expect(todosPath().startsWith(workspaceRoot)).toBe(false);
+    });
+
+    it('REJECTS an over-length capture server-side (never writes)', async () => {
+      const { sendMessage, sentMessages } = createTestClient(server);
+      await sendMessage({ type: 'capture:append', text: 'a'.repeat(2001) });
+      expect(fs.existsSync(todosPath())).toBe(false);
+      expect(sentMessages).toContainEqual({ type: 'capture:appended', ok: false, count: null });
+    });
+
+    it('REJECTS a non-string capture server-side (the typeof guard)', async () => {
+      const { sendMessage, sentMessages } = createTestClient(server);
+      await sendMessage({ type: 'capture:append', text: { evil: true } });
+      expect(fs.existsSync(todosPath())).toBe(false);
+      expect(sentMessages).toContainEqual({ type: 'capture:appended', ok: false, count: null });
+    });
+
+    it('REJECTS a control-byte capture server-side (never writes)', async () => {
+      const { sendMessage, sentMessages } = createTestClient(server);
+      await sendMessage({ type: 'capture:append', text: 'wipe\x1b[2Jthis' });
+      expect(fs.existsSync(todosPath())).toBe(false);
+      expect(sentMessages).toContainEqual({ type: 'capture:appended', ok: false, count: null });
+    });
+
+    it('REJECTS a missing text field server-side (never writes)', async () => {
+      const { sendMessage, sentMessages } = createTestClient(server);
+      await sendMessage({ type: 'capture:append' });
+      expect(fs.existsSync(todosPath())).toBe(false);
+      expect(sentMessages).toContainEqual({ type: 'capture:appended', ok: false, count: null });
     });
   });
 });

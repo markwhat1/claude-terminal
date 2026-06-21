@@ -10,6 +10,8 @@ import type { TabManager } from './tab-manager';
 import type { PtyManager } from './pty-manager';
 import type { AppState, WirePtyToTabFn } from './ipc-handlers';
 import { log } from './logger';
+import { appendTodo } from './todo-store';
+import { CAPTURE_APPEND_CHANNEL } from '@shared/capture';
 
 export interface WebRemoteServerDeps {
   tabManager: TabManager;
@@ -21,6 +23,13 @@ export interface WebRemoteServerDeps {
   serializeTerminal: (tabId: string) => Promise<string>;
   wirePtyToTab: WirePtyToTabFn;
   settings: { addRecentDir: (dir: string) => Promise<void> };
+  /**
+   * M12: the userData dir for the capture store (todos.json). index.ts passes
+   * app.getPath('userData'); the remote capture:append handler validates +
+   * persists through the same appendTodo path as the local handler. Optional so
+   * existing remote tests construct without it (capture is then a no-op).
+   */
+  captureDir?: string;
 }
 
 // Maps file extensions to Content-Type headers
@@ -452,6 +461,29 @@ export class WebRemoteServer {
           ? await state.worktreeManager.getCurrentBranch()
           : '';
         client.ws.send(JSON.stringify({ type: 'worktree:currentBranch', branch }));
+        break;
+      }
+
+      case CAPTURE_APPEND_CHANNEL: {
+        // M12 remote capture: SERVER-SIDE VALIDATION is required (PLAN.md 3.5 /
+        // PLAN-PHASE-2-3 line 55). appendTodo enforces typeof string, the length
+        // cap, control-byte rejection, total-item + file-size caps, and an atomic
+        // write to the userData path. We pass msg.text straight in (NOT trusted):
+        // a non-string fails the typeof guard inside the validator, the same way
+        // it would locally. The reply carries only ok + count, never the text.
+        // The captured text is DISPLAY-ONLY and never echoed to other clients.
+        if (!this.deps.captureDir) {
+          client.ws.send(JSON.stringify({ type: 'capture:appended', ok: false, count: null }));
+          break;
+        }
+        const result = appendTodo(this.deps.captureDir, msg.text);
+        if (!result.ok) {
+          // Reason only in the log, never the captured text (PLAN.md 3.4 / 3.6).
+          log.warn('[web-remote] capture rejected:', result.reason);
+          client.ws.send(JSON.stringify({ type: 'capture:appended', ok: false, count: null }));
+        } else {
+          client.ws.send(JSON.stringify({ type: 'capture:appended', ok: true, count: result.count }));
+        }
         break;
       }
 

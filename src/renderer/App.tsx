@@ -102,6 +102,9 @@ export default function App() {
   // layer for stale-prop safety.
   const [closedRecent, setClosedRecent] = useState(0);
   const [recentCloses, setRecentCloses] = useState<ClosedRecord[]>([]);
+  // M12: the quiet Inbox(N) glance number (the open-todo count). App owns the
+  // capture:count read; HomeView renders it as a calm muted number.
+  const [inboxCount, setInboxCount] = useState(0);
   // The resolved path is surfaced in the not-running and error states; the
   // reader returns it inside the state, but Phase 0 keeps a stable label.
   const PROGRAM_BOARD_PATH = 'C:\\Users\\Mark\\Claude-Code\\dashboard\\state.json';
@@ -150,6 +153,31 @@ export default function App() {
     });
     return cleanup;
   }, [loadProgramBoard]);
+
+  // M12: refresh the Inbox(N) glance count from the capture store.
+  const refreshInboxCount = useCallback(async () => {
+    try {
+      const n = await window.claudeTerminal.getCaptureCount();
+      setInboxCount(n);
+    } catch {
+      // A failed count read leaves the prior glance number; never throws.
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshInboxCount();
+  }, [refreshInboxCount]);
+
+  // M12: persist one captured todo, then refresh the glance count. The text is
+  // the inert capture payload; the server-side validation lives in MAIN.
+  const handleCapture = useCallback(async (text: string) => {
+    try {
+      await window.claudeTerminal.appendCapture(text);
+    } catch {
+      // A failed append is surfaced only by the count not moving; never throws.
+    }
+    await refreshInboxCount();
+  }, [refreshInboxCount]);
 
   const handleOpenPowerShellInRepo = useCallback(async (repo: string | null) => {
     // Resolve the preferred PowerShell from the installed shells (pwsh else 5.1).
@@ -630,6 +658,13 @@ export default function App() {
       selectProject: handleSelectProject,
       renameTab: (id) => setRenamingTabId(id),
       openProjectSwitcher: () => setShowProjectSwitcher(true),
+      // M12: HomeView owns the capture bar and listens for the chord itself so it
+      // can open + focus the input SYNCHRONOUSLY on the keydown (no await, no
+      // setTimeout, no cross-component state round-trip). The registry entry
+      // exists for the AGENTS.md chord challenge + the registry test; this app-
+      // level action is a deliberate no-op so the global handler does not race
+      // HomeView's synchronous focus.
+      openCapture: () => undefined,
     };
 
     const handler = (e: KeyboardEvent) => {
@@ -767,6 +802,8 @@ export default function App() {
               onCopy={handleCopyToClipboard}
               onOpenExternal={handleOpenExternal}
               onRetry={loadProgramBoard}
+              onCapture={handleCapture}
+              inboxCount={inboxCount}
             />
           )}
         </div>

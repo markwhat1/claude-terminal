@@ -38,7 +38,12 @@ export type KnownActionId =
   | 'openToDecide'
   | 'reviewTodos'
   | 'summarizeChanges'
-  | 'openPowerShell';
+  | 'openPowerShell'
+  // M12: a captured (source:'todo') item is DISPLAY-ONLY. It is NEVER eligible
+  // for a free-text-slot claudeQuery; its only action is Copy of inert text
+  // (PLAN.md 1.7 / 3.3). copyOnly is the route pickPrimaryAction returns for it,
+  // and it is excluded from the Claude-injection path (isClaudePrimaryAction).
+  | 'copyOnly';
 
 /**
  * The canned smallest-first-move button labels (1.7 table).
@@ -52,6 +57,8 @@ export const ACTION_LABELS: Record<KnownActionId, string> = {
   reviewTodos: 'Look at the open TODOs',
   summarizeChanges: 'See what changed',
   openPowerShell: 'Open a shell to start',
+  // A captured todo's only action is Copy of inert text.
+  copyOnly: 'Copy',
 };
 
 // The producer's two blocker tags (src/program_board/status.py:3).
@@ -72,6 +79,12 @@ const NEEDS_CADDC02_TAG = 'needs-CADDC02';
  * card.
  */
 export function pickPrimaryAction(item: DashboardItem): KnownActionId {
+  // M12: a captured todo (source:'todo') is DISPLAY-ONLY. It is routed to
+  // copyOnly BEFORE any other branch so a phone-captured raw string can never
+  // become a hero whose action re-touches the PHI choke point (PLAN.md 1.7).
+  // Note this keys off SOURCE, not kind: a program-board card with kind:'todo'
+  // is still a real card and keeps its draftFirstVersion route below.
+  if (item.source === 'todo') return 'copyOnly';
   const tags = item.badges;
   if (tags.includes(NEEDS_DECISION_TAG)) return 'openToDecide';
   if (tags.includes(NEEDS_CADDC02_TAG)) return 'openPowerShell';
@@ -130,6 +143,12 @@ export function composeClaudeQuery(args: ComposeClaudeQueryArgs): ClaudeQueryLin
       return `Summarize what changed on this branch.` as ClaudeQueryLine;
     case 'openPowerShell':
       return `Open a shell to start.` as ClaudeQueryLine;
+    case 'copyOnly':
+      // Unreachable by contract: a copyOnly (source:'todo') item is never an
+      // action payload and must never reach this composer (PLAN.md 1.7 / 3.4).
+      // Throwing makes a future misuse loud rather than silently composing a
+      // query from captured text.
+      throw new Error('composeClaudeQuery must not be called for a copyOnly (captured todo) item');
   }
 }
 

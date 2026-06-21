@@ -22,6 +22,13 @@ export interface KeybindingContext {
   selectProject: (projectId: string) => void;
   renameTab: (tabId: string) => void;
   openProjectSwitcher: () => void;
+  /**
+   * M12: open the one-gesture capture bar on the Home surface. The action is a
+   * registry entry so the chord (Ctrl+Shift+K) is challenged and reserved per
+   * AGENTS.md; HomeView owns the bar and focuses the input SYNCHRONOUSLY on the
+   * keydown (no await, no setTimeout), so the sub-2s activation axis holds.
+   */
+  openCapture: () => void;
 }
 
 export interface Keybinding {
@@ -59,6 +66,12 @@ export const keybindings: Keybinding[] = [
   { mod: 'ctrl',       key: 'F4',         action: (ctx) => { const id = ctx.activeTabId(); if (id) ctx.closeTab(id); } },
   { mod: 'ctrl',       key: 'Tab',        action: (ctx) => cycleTab(ctx, 1) },
   { mod: 'ctrl+shift', key: 'Tab',        action: (ctx) => cycleTab(ctx, -1) },
+  // M12: one-gesture capture. UPPERCASE 'K' is mandatory: matchKeybinding
+  // compares e.key === kb.key case-sensitively (:77/:80), and with Shift held
+  // KeyboardEvent.key is 'K'. A lowercase 'k' entry would never fire. Ctrl+Shift+K
+  // is clean: not a Ctrl+1..9 jump, and the terminal-claimed bare Ctrl+K (kill
+  // line) is excluded because the 'ctrl' matcher arm requires !e.shiftKey.
+  { mod: 'ctrl+shift', key: 'K',          action: (ctx) => ctx.openCapture() },
   { mod: 'ctrl',       key: 'ArrowDown',  action: (ctx) => cycleProject(ctx, 1) },
   { mod: 'ctrl',       key: 'ArrowUp',    action: (ctx) => cycleProject(ctx, -1) },
   {                     key: 'F2',         action: (ctx) => { const id = ctx.activeTabId(); if (id) ctx.renameTab(id); } },

@@ -206,6 +206,24 @@ The channel-name constants `CLAUDE_INJECT_QUERY_CHANNEL` and `CLAUDE_INJECT_STAT
 | `claude:injectQuery` | local-only | remote `tab:create` discards cwd; no generic passthrough in `handleMessage` |
 | `claude:injectStatus` | local-only | absent from `REMOTE_FORWARDED_CHANNELS` |
 
+### Capture (M12)
+
+| Channel | Direction | Pattern | Renderer Signature | Payload |
+|---|---|---|---|---|
+| `capture:append` | renderer -> main | invoke | `appendCapture(text)` | `{ text: string }` -> `{ ok: boolean, count: number \| null }` |
+| `capture:count` | renderer -> main | invoke | `getCaptureCount()` | -> `count: number` |
+
+`capture:append` is the one-gesture capture write. The main handler runs the shared `appendTodo` (server-side validation: `typeof text === 'string'`, a 2000-char length cap, control-byte rejection, a non-empty trim, plus total-item and file-size caps) and atomic-writes the v2 store to `<userData>/dashboard/todos.json`, OUT of the workspace git tree. The captured text is DISPLAY-ONLY: it is never an action payload, never reaches `composeClaudeQuery`, and never reaches the log (rejection logs carry a machine reason only). A `source:'todo'` item routes to the `copyOnly` action (its only action is Copy of inert text). `capture:count` is the quiet `Inbox(N)` glance number (the open-item count), never a red badge.
+
+`capture:append` is **remote-enabled** with the SAME server-side validation: `WebRemoteServer.handleMessage` has a `capture:append` case that calls `appendTodo` and replies `{ type: 'capture:appended', ok, count }`. `capture:count` is **local-only** (Home is desktop-only in Phase 1); `handleMessage` has no case for it, so a remote client sending that type receives a warning and no response. Neither channel is a broadcast, so neither appears in `REMOTE_FORWARDED_CHANNELS`. The channel-name constants `CAPTURE_APPEND_CHANNEL` and `CAPTURE_COUNT_CHANNEL` live in `src/shared/capture.ts`.
+
+#### Remote parity table
+
+| Channel | Remote (WebSocket) | Notes |
+|---|---|---|
+| `capture:append` | remote-enabled | `handleMessage` case runs `appendTodo` server-side validation; reply `capture:appended` |
+| `capture:count` | local-only | `handleMessage` has no case; the Inbox glance is desktop-only |
+
 ### Git
 
 | Channel | Direction | Pattern | Renderer Signature | Payload |

@@ -89,6 +89,7 @@ function makeHardenedCtx(
     selectProject: vi.fn(),
     renameTab: vi.fn(),
     openProjectSwitcher: vi.fn(),
+    openCapture: vi.fn(),
   };
 }
 
@@ -179,6 +180,7 @@ describe('M3a-iii: Ctrl+Tab cycleTab lands on tabs[0] when Home is active', () =
       selectProject: vi.fn(),
       renameTab: vi.fn(),
       openProjectSwitcher: vi.fn(),
+      openCapture: vi.fn(),
     };
     const action = findAction('ctrl', 'Tab');
     action(ctx);
@@ -201,6 +203,7 @@ describe('M3a-iii: Ctrl+Tab cycleTab lands on tabs[0] when Home is active', () =
       selectProject: vi.fn(),
       renameTab: vi.fn(),
       openProjectSwitcher: vi.fn(),
+      openCapture: vi.fn(),
     };
     const action = findAction('ctrl', 'Tab');
     action(ctx);
@@ -224,6 +227,7 @@ describe('M3a-iii: Ctrl+Tab cycleTab lands on tabs[0] when Home is active', () =
       selectProject: vi.fn(),
       renameTab: vi.fn(),
       openProjectSwitcher: vi.fn(),
+      openCapture: vi.fn(),
     };
     const action = findAction('ctrl', 'Tab');
     action(ctx);

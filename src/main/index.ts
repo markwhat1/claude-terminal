@@ -261,6 +261,9 @@ async function activateRemoteAccess(): Promise<RemoteAccessInfo> {
     },
     wirePtyToTab: wirePtyToTabFn!,
     settings: { addRecentDir: (dir: string) => settings.addRecentDir(dir) },
+    // M12: the capture store path; the remote capture:append handler validates +
+    // persists through the same appendTodo path as the local handler.
+    captureDir: app.getPath('userData'),
   });
 
   try {
@@ -489,6 +492,9 @@ app.on('ready', async () => {
     queryInjector,
     // M14e: home-opens.json lives under userData, never the workspace git tree.
     homeOpensDir: app.getPath('userData'),
+    // M12: the capture store (todos.json) lives under userData/dashboard, never
+    // the workspace git tree (PLAN.md 3.6).
+    captureDir: app.getPath('userData'),
   });
   cleanupIpcHandlers = ipcResult.cleanup;
   wirePtyToTabFn = ipcResult.wirePtyToTab;

@@ -18,6 +18,8 @@ import type { SettingsStore } from './settings-store';
 import type { WorkspaceStore } from './workspace-store';
 import { log } from './logger';
 import { appendHomeOpen } from './home-opens-log';
+import { appendTodo, countOpenTodos } from './todo-store';
+import { CAPTURE_APPEND_CHANNEL, CAPTURE_COUNT_CHANNEL } from '@shared/capture';
 
 export interface AppState {
   // New: multi-project workspace support
@@ -70,6 +72,14 @@ export interface IpcHandlerDeps {
    * Optional so existing handler tests construct without it.
    */
   homeOpensDir?: string;
+  /**
+   * M12: the userData directory under which the capture store (todos.json) lives
+   * at <captureDir>/dashboard/todos.json, OUT of the workspace git tree (PLAN.md
+   * 3.6). When provided (index.ts passes app.getPath('userData')), the
+   * capture:append + capture:count handlers persist + count. Optional so existing
+   * handler tests construct without it.
+   */
+  captureDir?: string;
 }
 
 /** Resolve hooksDir based on dev/production mode */
@@ -948,6 +958,33 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
       };
     }
     return { boardState: { programs: [], generated_at: null, suggested: [] }, closedRecent: 0, recentCloses: [] };
+  });
+
+  // ---- Capture (M12, one-gesture capture) ----
+  // capture:append is REMOTE-ENABLED (PLAN.md 3.5) with server-side validation:
+  // both this local handler and the web-remote-server handler run appendTodo,
+  // which validates (typeof string, length cap, control bytes, non-empty), caps
+  // total items + file size, and atomic-writes to <captureDir>/dashboard/todos.json
+  // under userData (OUT of the workspace git tree, PLAN.md 3.6). The captured text
+  // is DISPLAY-ONLY: it is never an action payload and never reaches the log.
+  // Returns the new open-item count (or null on rejection / when disabled).
+  ipcMain.handle(CAPTURE_APPEND_CHANNEL, async (_event, payload: { text: unknown }) => {
+    if (!deps.captureDir) return { ok: false, count: null };
+    const result = appendTodo(deps.captureDir, payload?.text);
+    if (!result.ok) {
+      // Reason only, never the captured text (PLAN.md 3.4 / 3.6).
+      log.warn('[capture] append rejected: %s', result.reason);
+      return { ok: false, count: null };
+    }
+    return { ok: true, count: result.count };
+  });
+
+  // capture:count is the quiet Inbox(N) glance number (NEVER a red badge, M12).
+  // Local-only: Home is desktop-only in Phase 1 (PLAN.md 2.9), so the glance
+  // number is not part of the remote surface.
+  ipcMain.handle(CAPTURE_COUNT_CHANNEL, async () => {
+    if (!deps.captureDir) return 0;
+    return countOpenTodos(deps.captureDir);
   });
 
   // Return cleanup function and wirePtyToTab for external use
