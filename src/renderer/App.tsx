@@ -279,6 +279,12 @@ export default function App() {
     await window.claudeTerminal.switchTab(tab.id);
   }, [workspaceDir]);
 
+  // M10c: remember the injection payload per spawning tab so the failed-start
+  // surface can re-run the SAME canned query (into a fresh tab; see
+  // handleRetryInjection). The 30s fail-safe itself lives in MAIN (QueryInjector),
+  // so a renderer reload cannot orphan the query; this ref only serves retry.
+  const injectionPayloads = useRef<Map<string, InjectionRetryPayload>>(new Map());
+
   // M10d: open Claude in the hero program's own repo with the canned query typed
   // in. Resolves the absolute cwd from workspaceDir + repo slug (same pattern as
   // handleOpenPowerShellInRepo). Calls injectQuery then sets the active tab.
@@ -286,29 +292,34 @@ export default function App() {
     const cwd = repo && workspaceDir
       ? `${workspaceDir.replace(/[\\/]$/, '')}/${repo}`
       : undefined;
-    const tabId = await window.claudeTerminal.injectQuery({
+    const payload: InjectionRetryPayload = {
       explicitCwd: cwd,
       query,
       projectId: activeProjectIdRef.current ?? undefined,
-    });
+    };
+    const tabId = await window.claudeTerminal.injectQuery(payload);
+    // Remember the payload keyed by the spawning tab so a failed-start retry can
+    // re-run the same canned query.
+    injectionPayloads.current.set(tabId, payload);
     setActiveTabId(tabId);
     await window.claudeTerminal.switchTab(tabId);
   }, [workspaceDir]);
 
-  // M10c: remember the last injection payload per spawning tab so the failed-start
-  // surface can re-run the SAME canned query into the SAME tab. The 30s fail-safe
-  // itself lives in MAIN (QueryInjector), so a renderer reload cannot orphan the
-  // query; this ref only serves the one-click retry affordance.
-  const injectionPayloads = useRef<Map<string, InjectionRetryPayload>>(new Map());
-
-  const handleRetryInjection = useCallback(async (tabId: string) => {
-    const payload = injectionPayloads.current.get(tabId);
+  // M10c: the failed-start retry. A failed start cannot recover on the same tab
+  // (the session-start hook never fired, or the PTY is gone), so retry spawns a
+  // FRESH tab with the same canned query and CLOSES the prior failed tab so it
+  // does not orphan. The 30s fail-safe lives in MAIN (QueryInjector); this only
+  // re-runs the remembered intent.
+  const handleRetryInjection = useCallback(async (failedTabId: string) => {
+    const payload = injectionPayloads.current.get(failedTabId);
     if (!payload) return;
-    await window.claudeTerminal.injectQuery({
-      explicitCwd: payload.explicitCwd,
-      query: payload.query,
-      projectId: payload.projectId,
-    });
+    injectionPayloads.current.delete(failedTabId);
+    const newTabId = await window.claudeTerminal.injectQuery(payload);
+    injectionPayloads.current.set(newTabId, payload);
+    // Clean up the orphaned failed tab now that its replacement is spawning.
+    await window.claudeTerminal.closeTab(failedTabId);
+    setActiveTabId(newTabId);
+    await window.claudeTerminal.switchTab(newTabId);
   }, []);
 
   const handleCopyToClipboard = useCallback((text: string) => {

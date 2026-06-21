@@ -1,9 +1,9 @@
 /**
  * M10c: useInjectionStatus hook (the renderer side of the 1.5b affordance).
  *
- * Subscribes to claude:injectStatus, tracks the per-tab kind, runs the single
- * ~4s threshold timer for the pending state, and exposes a retry that re-invokes
- * the same canned query into the same tab.
+ * Subscribes to claude:injectStatus, tracks the per-tab kind, and runs the single
+ * ~4s threshold timer for the pending state. The failed-start retry is owned by
+ * App (handleRetryInjection), not this hook, so the hook is status-only.
  *
  * Tests:
  *   - a pending status starts the threshold timer; thresholdPassed flips after
@@ -12,7 +12,6 @@
  *   - a failure status (the MAIN 30s timeout surfacing after a renderer reload)
  *     is reflected as kind === 'failure' WITHOUT the renderer having retained the
  *     query, proving the query was not lost on reload (the fail-safe is MAIN-owned).
- *   - retry calls injectQuery again with the remembered payload.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -85,20 +84,5 @@ describe('useInjectionStatus', () => {
     const { result } = renderHook(() => useInjectionStatus('tab-1'));
     emit({ tabId: 'tab-1', kind: 'failure', reason: 'timeout' });
     expect(result.current.kind).toBe('failure');
-  });
-
-  it('retry re-invokes injectQuery with the remembered payload', async () => {
-    const { result } = renderHook(() =>
-      useInjectionStatus('tab-1', { explicitCwd: '/w/cad-portal', query: 'q' as any }),
-    );
-    emit({ tabId: 'tab-1', kind: 'failure', reason: 'timeout' });
-
-    await act(async () => {
-      await result.current.retry();
-    });
-
-    expect(window.claudeTerminal.injectQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ explicitCwd: '/w/cad-portal', query: 'q' }),
-    );
   });
 });

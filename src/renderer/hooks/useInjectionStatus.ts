@@ -5,8 +5,9 @@
  *
  * The 30s fail-safe is MAIN-owned (QueryInjector), so this hook does NOT hold a
  * timeout: a renderer reload mid-flight cannot orphan the query, and the failure
- * still arrives over injectStatus from MAIN. The optional retryPayload lets the
- * failed-start surface re-invoke the same canned query into the same tab.
+ * still arrives over injectStatus from MAIN. The failed-start RETRY is owned by
+ * App (handleRetryInjection), which spawns a fresh tab via injectQuery and closes
+ * the failed one; this hook is status-only.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,13 +28,10 @@ export interface UseInjectionStatusResult {
   kind: InjectStatusKind | null;
   /** Whether the ~4s threshold has elapsed during the pending state. */
   thresholdPassed: boolean;
-  /** Re-invoke the same canned query into the same tab (failed-start retry). */
-  retry: () => Promise<void>;
 }
 
 export function useInjectionStatus(
   tabId: string | null,
-  retryPayload?: InjectionRetryPayload,
 ): UseInjectionStatusResult {
   const [kind, setKind] = useState<InjectStatusKind | null>(null);
   const [thresholdPassed, setThresholdPassed] = useState(false);
@@ -70,14 +68,5 @@ export function useInjectionStatus(
     };
   }, [tabId, clearThreshold]);
 
-  const retry = useCallback(async () => {
-    if (!retryPayload) return;
-    await window.claudeTerminal.injectQuery({
-      explicitCwd: retryPayload.explicitCwd,
-      query: retryPayload.query,
-      projectId: retryPayload.projectId,
-    });
-  }, [retryPayload]);
-
-  return { kind, thresholdPassed, retry };
+  return { kind, thresholdPassed };
 }

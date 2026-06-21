@@ -14,6 +14,14 @@
  * a renderer reload during the multi-second CLI boot cannot wipe the Map or
  * cancel the timer.
  *
+ * Failed-start retry is NOT a same-tab re-arm. A failed start means the
+ * session-start hook never fired (no tab:ready, so the idle gate never runs) or
+ * the PTY is gone; re-arming the same tab would just time out again or re-fail on
+ * the same dead PTY. So the renderer's retry spawns a FRESH tab via
+ * claude:injectQuery (a new PTY + a fresh hook install) and closes the prior
+ * failed tab. This class therefore owns no retry method; it only remembers which
+ * tabs it injected (injectedTabs) for the R-14 tab-namer gate (PLAN 3.1 step 7).
+ *
  * The write uses CR (\r), never CRLF: a trailing \r\n can register as two
  * submissions in a ConPTY TUI (PLAN 3.1 step 5).
  */
@@ -85,9 +93,10 @@ export class QueryInjector {
       timer,
       suppressNotify: true,
     });
-    // Remember the query so a one-click retry can re-arm after any failure path
-    // (timeout or dead-PTY) has deleted the pending entry.
-    this.lastQuery.set(tabId, query);
+    // Record this as a dashboard-injected tab so the R-14 tab-namer gate
+    // (isDashboardInjected) still recognizes it after the pending entry is
+    // cleared. Membership is durable on purpose; it outlives the write.
+    this.injectedTabs.add(tabId);
     log.info('[inject] armed', tabId);
     this.sendStatus(CLAUDE_INJECT_STATUS_CHANNEL, { tabId, kind: 'pending' });
   }
@@ -100,14 +109,14 @@ export class QueryInjector {
   /**
    * M19 / R-14: true when this tab was spawned by the dashboard injection path,
    * i.e. it has ever been armed. Stays true after the pending entry is cleared
-   * (the lastQuery remembrance outlives the write) so a tab:generate-name event
+   * (the injectedTabs membership outlives the write) so a tab:generate-name event
    * that fires AFTER the canned query is written is still recognized as a
    * dashboard-injected tab and gated. The dashboard auto-names a fresh tab per
    * injection, so this is the durable "is this a dashboard tab" signal the
    * tab-namer needs to apply the R-14 gate.
    */
   isDashboardInjected(tabId: string): boolean {
-    return this.pending.has(tabId) || this.lastQuery.has(tabId);
+    return this.pending.has(tabId) || this.injectedTabs.has(tabId);
   }
 
   /**
@@ -158,20 +167,6 @@ export class QueryInjector {
   }
 
   /**
-   * Re-arms a previously failed tab for a one-click retry into the SAME tab
-   * (PLAN 3.1 step 7). Reuses the last query if the entry was already cleared.
-   */
-  retry(tabId: string): void {
-    const entry = this.pending.get(tabId);
-    const query = entry?.query ?? this.lastQuery.get(tabId);
-    if (!query) {
-      log.warn('[inject] retry with no remembered query', tabId);
-      return;
-    }
-    this.arm(tabId, query);
-  }
-
-  /**
    * Cleanup on tab:closed / tab:removed: cancels the timer and drops the entry so
    * a dead tab cannot hold a stale write and the Map cannot grow unbounded.
    */
@@ -182,14 +177,19 @@ export class QueryInjector {
 
   // -- internals ------------------------------------------------------------
 
-  /** Remembered query per tab so retry can re-arm after the entry is deleted. */
-  private readonly lastQuery = new Map<string, ClaudeQueryLine>();
+  /**
+   * The durable set of tab ids ever armed by the dashboard injection path. Used
+   * only by isDashboardInjected (the R-14 tab-namer gate); it deliberately
+   * outlives the pending entry and is never a retry source (a failed start cannot
+   * recover on the same tab, so retry spawns a fresh tab via claude:injectQuery;
+   * see the header note).
+   */
+  private readonly injectedTabs = new Set<string>();
 
   private onTimeout(tabId: string): void {
     const entry = this.pending.get(tabId);
     if (!entry || entry.injected) return;
     log.warn('[inject] fail-safe timeout fired', tabId);
-    this.lastQuery.set(tabId, entry.query);
     this.pending.delete(tabId);
     this.sendStatus(CLAUDE_INJECT_STATUS_CHANNEL, {
       tabId,

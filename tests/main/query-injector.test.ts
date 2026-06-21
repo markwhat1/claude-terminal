@@ -17,7 +17,6 @@
  *   - shouldSuppressNotify is true for a tracked tab and persists through the
  *     first post-injection idle, then a SECOND post-turn idle is still suppressed
  *     for at least one beat (the do-not-notify flag persists past first Stop).
- *   - retry re-arms an already-failed tab and re-writes on the next idle.
  *   - the CR rule: the write uses \r, never \r\n, even for a multi-line query.
  */
 
@@ -240,22 +239,5 @@ describe('QueryInjector', () => {
 
   it('consumeNotifySuppression is false for a tab that was never armed', () => {
     expect(injector.consumeNotifySuppression('tab-unknown')).toBe(false);
-  });
-
-  // -------------------------------------------------------------------------
-  // retry re-arms a failed tab
-  // -------------------------------------------------------------------------
-
-  it('retry re-arms a tab and the next idle writes the query', () => {
-    injector.arm('tab-1', QUERY);
-    vi.advanceTimersByTime(INJECT_TIMEOUT_MS); // fail by timeout
-    expect(injector.isArmed('tab-1')).toBe(false);
-
-    injector.retry('tab-1');
-    expect(injector.isArmed('tab-1')).toBe(true);
-
-    injector.onIdle('tab-1');
-    expect(deps.writes).toHaveLength(1);
-    expect(deps.writes[0].data).toBe(`${QUERY}\r`);
   });
 });
