@@ -222,6 +222,48 @@ export function ageBandLabel(color: DashboardItem['ageColor']): string {
 }
 
 // ---------------------------------------------------------------------------
+// Pull-forward candidate (M8b-ii, 4.6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Selects the single calmest non-paused active card to surface in the opt-in
+ * pull-forward affordance ("Want another?", 4.6/6.3).
+ *
+ * Candidate set: items where paused===false AND the lane is not 'done' (an
+ * ACTIVE card in the program-board sense: it still has work to do, but does
+ * not currently need-you, so it was not surfaced as the hero).
+ *
+ * "Calmest" in Phase 1 (without the full rankItems engine): the last card in
+ * producer board order, since the producer places the most urgent items first.
+ * Returns null when no eligible non-paused active card exists.
+ */
+export function pullForwardCandidate(
+  items: DashboardItem[],
+): DashboardItem | null {
+  // Exclude paused and done cards (4.6: "ACTIVE card", lane!=='paused', and we
+  // also skip lane==='done' since a done card is not a forward-pull candidate).
+  const eligible = items.filter((i) => !i.paused && i.slug !== '' && !isLaneDone(i));
+  if (eligible.length === 0) return null;
+  // Calmest = last in producer order (producer sorts most-urgent first).
+  return eligible[eligible.length - 1];
+}
+
+/**
+ * Returns true when an item's underlying lane is 'done'. We check the kind
+ * field (mapped from the producer's lane) rather than the raw lane string since
+ * DashboardItem is already mapped. A 'done' card has dod.met === dod.total when
+ * total > 0. We use a conservative check: if the item is not paused and has a
+ * positive dod total with all steps met, treat it as done.
+ *
+ * In Phase 1 the producer also emits a `lane` field on ProgramCard, but
+ * DashboardItem does not carry it after mapping. We approximate done-ness from
+ * the DoD numbers, which is sufficient for the pull-forward gate.
+ */
+function isLaneDone(item: DashboardItem): boolean {
+  return item.dodTotal > 0 && item.dodMet === item.dodTotal;
+}
+
+// ---------------------------------------------------------------------------
 // The single-field hero override (1.11)
 // ---------------------------------------------------------------------------
 

@@ -554,6 +554,247 @@ describe('M8a: mandatory states', () => {
 });
 
 // ---------------------------------------------------------------------------
+// M8b-ii: caught-up pull-forward (opt-in, paused exclusion)
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a caught-up state: no card has needs_you===true, but there are
+ * non-paused active cards and one paused card. Used for the pull-forward tests.
+ */
+function caughtUpWithActivesState(): ProgramBoardState {
+  return {
+    generated_at: '2026-06-21T01:00:00',
+    programs: [
+      {
+        // A paused card that must NEVER surface in the pull-forward.
+        slug: 'marketing-roi',
+        name: 'Marketing ROI',
+        repos: ['practice-analytics'],
+        sources: ['override'],
+        tags: [],
+        time_sensitive: null,
+        blocked_on: '',
+        paused: true,
+        git: { last_commit: null, age_days: 5, uncommitted: false, unmerged_branch: null },
+        dod: { met: 0, total: 2, gaps: ['a', 'b'] },
+        last_touched: null,
+        lane: 'paused',
+        age_color: 'yellow',
+        needs_you: false,
+        needs_you_reasons: [],
+      },
+      {
+        // An active card that is eligible for pull-forward.
+        slug: 'cad-staff-portal',
+        name: 'CAD Staff Portal',
+        repos: ['cad-portal'],
+        sources: ['override'],
+        tags: [],
+        time_sensitive: null,
+        blocked_on: '',
+        paused: false,
+        git: { last_commit: null, age_days: 0, uncommitted: false, unmerged_branch: null },
+        dod: { met: 1, total: 3, gaps: ['deploy', 'ci'] },
+        last_touched: null,
+        lane: 'active',
+        age_color: 'green',
+        needs_you: false,
+        needs_you_reasons: [],
+      },
+    ],
+    suggested: [],
+  };
+}
+
+describe('M8b-ii: caught-up pull-forward (opt-in, paused exclusion)', () => {
+  it('default caught-up renders NO pull-forward (only headline + count)', () => {
+    const state = caughtUpWithActivesState();
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />);
+    expect(screen.getByTestId('home-caught-up')).toBeTruthy();
+    expect(screen.getByTestId('home-caught-up').textContent).toContain('Clear. Keep working.');
+    // No pull-forward section by default.
+    expect(screen.queryByTestId('home-pull-forward')).toBeNull();
+    // No "Want another?" affordance visible initially... wait, it should be visible
+    // but the pull-forward content is hidden until activated.
+    // The affordance button is present; the pull-forward card is not.
+    expect(screen.queryByTestId('home-pull-forward-card')).toBeNull();
+  });
+
+  it('default caught-up with zero closes does not show a closed count', () => {
+    const state = caughtUpWithActivesState();
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready', closedRecent: 0 })} />);
+    expect(screen.queryByTestId('home-closed-count')).toBeNull();
+  });
+
+  it('default caught-up with nonzero closes shows the count', () => {
+    const state = caughtUpWithActivesState();
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready', closedRecent: 3 })} />);
+    expect(screen.getByTestId('home-closed-count').textContent).toContain('3 closed, last 24h');
+  });
+
+  it('the "Want another?" affordance is a quiet link/button, NOT a bg-attention button', () => {
+    const state = caughtUpWithActivesState();
+    const { container } = render(
+      <HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />,
+    );
+    const affordance = screen.getByTestId('home-want-another');
+    // Must be a button or have role=button.
+    expect(
+      affordance.tagName === 'BUTTON' || affordance.getAttribute('role') === 'button',
+    ).toBe(true);
+    // Must NOT carry bg-attention (would be a loud accent, violating the spec).
+    expect(affordance.className).not.toContain('bg-attention');
+    // No other bg-attention elements in the caught-up surface.
+    const accents = container.querySelectorAll('.bg-attention');
+    expect(accents.length).toBe(0);
+  });
+
+  it('after activating "Want another?" a pull-forward card appears', () => {
+    const state = caughtUpWithActivesState();
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />);
+    // No pull-forward card before activation.
+    expect(screen.queryByTestId('home-pull-forward-card')).toBeNull();
+    // Activate the affordance.
+    fireEvent.click(screen.getByTestId('home-want-another'));
+    // Pull-forward card now visible.
+    expect(screen.getByTestId('home-pull-forward-card')).toBeTruthy();
+  });
+
+  it('after activating "Want another?" the pull-forward shows a non-paused card', () => {
+    const state = caughtUpWithActivesState();
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />);
+    fireEvent.click(screen.getByTestId('home-want-another'));
+    // The pull-forward card title is the non-paused active card.
+    const card = screen.getByTestId('home-pull-forward-card');
+    expect(card.textContent).toContain('CAD Staff Portal');
+    expect(card.textContent).not.toContain('Marketing ROI');
+  });
+
+  it('after activating "Want another?" the pull-forward NEVER shows a paused card', () => {
+    // State with ONLY a paused card and no active cards: pull-forward should
+    // remain hidden since there is no eligible candidate.
+    const state: ProgramBoardState = {
+      generated_at: '2026-06-21T01:00:00',
+      programs: [
+        {
+          slug: 'only-paused',
+          name: 'Only Paused',
+          repos: ['repo-x'],
+          sources: ['override'],
+          tags: [],
+          time_sensitive: null,
+          blocked_on: '',
+          paused: true,
+          git: { last_commit: null, age_days: 0, uncommitted: false, unmerged_branch: null },
+          dod: { met: 0, total: 1, gaps: ['the step'] },
+          last_touched: null,
+          lane: 'paused',
+          age_color: 'green',
+          needs_you: false,
+          needs_you_reasons: [],
+        },
+      ],
+      suggested: [],
+    };
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />);
+    // The affordance is absent when there is no non-paused candidate.
+    expect(screen.queryByTestId('home-want-another')).toBeNull();
+  });
+
+  it('the caught-up surface stacks headline then count then pull-forward (only behind opt-in)', () => {
+    const state = caughtUpWithActivesState();
+    const { container } = render(
+      <HomeView {...baseProps({
+        programBoardState: state,
+        loadStatus: 'ready',
+        closedRecent: 2,
+      })} />,
+    );
+    const caughtUp = container.querySelector('[data-testid="home-caught-up"]')!;
+    const children = Array.from(caughtUp.children);
+    // First child: headline
+    expect(children[0].textContent).toContain('Clear. Keep working.');
+    // Second child: closed count
+    expect(children[1].getAttribute('data-testid')).toBe('home-closed-count');
+    // Third child (if present): "Want another?" (not the pull-forward card)
+    if (children[2]) {
+      expect(children[2].getAttribute('data-testid')).toBe('home-want-another');
+    }
+    // Pull-forward card is not in the DOM before activation.
+    expect(container.querySelector('[data-testid="home-pull-forward-card"]')).toBeNull();
+  });
+
+  it('the pull-forward candidate set excludes paused cards even when there are multiple actives', () => {
+    // Two actives, one paused. The pull-forward should show only from the actives.
+    const state: ProgramBoardState = {
+      generated_at: '2026-06-21T01:00:00',
+      programs: [
+        {
+          slug: 'paused-x',
+          name: 'Paused X',
+          repos: ['repo-paused'],
+          sources: [],
+          tags: [],
+          time_sensitive: null,
+          blocked_on: '',
+          paused: true,
+          git: { last_commit: null, age_days: 2, uncommitted: false, unmerged_branch: null },
+          dod: { met: 0, total: 1, gaps: ['step'] },
+          last_touched: null,
+          lane: 'paused',
+          age_color: 'yellow',
+          needs_you: false,
+          needs_you_reasons: [],
+        },
+        {
+          slug: 'active-a',
+          name: 'Active A',
+          repos: ['repo-a'],
+          sources: [],
+          tags: [],
+          time_sensitive: null,
+          blocked_on: '',
+          paused: false,
+          git: { last_commit: null, age_days: 1, uncommitted: false, unmerged_branch: null },
+          dod: { met: 0, total: 2, gaps: ['x', 'y'] },
+          last_touched: null,
+          lane: 'active',
+          age_color: 'green',
+          needs_you: false,
+          needs_you_reasons: [],
+        },
+        {
+          slug: 'active-b',
+          name: 'Active B',
+          repos: ['repo-b'],
+          sources: [],
+          tags: [],
+          time_sensitive: null,
+          blocked_on: '',
+          paused: false,
+          git: { last_commit: null, age_days: 3, uncommitted: false, unmerged_branch: null },
+          dod: { met: 0, total: 2, gaps: ['p', 'q'] },
+          last_touched: null,
+          lane: 'active',
+          age_color: 'yellow',
+          needs_you: false,
+          needs_you_reasons: [],
+        },
+      ],
+      suggested: [],
+    };
+    render(<HomeView {...baseProps({ programBoardState: state, loadStatus: 'ready' })} />);
+    fireEvent.click(screen.getByTestId('home-want-another'));
+    const card = screen.getByTestId('home-pull-forward-card');
+    // The paused card must not appear.
+    expect(card.textContent).not.toContain('Paused X');
+    // One of the actives appears.
+    const shownName = card.textContent ?? '';
+    expect(shownName.includes('Active A') || shownName.includes('Active B')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 13. Feed url renders via onClick -> onOpenExternal, never a navigating href
 // ---------------------------------------------------------------------------
 

@@ -45,6 +45,7 @@ import {
   pausedLabel,
   degradedLine,
   ageBandLabel,
+  pullForwardCandidate,
   NEEDS_YOU_ROW_CAP,
   type KnownActionId,
 } from '@shared/home-copy';
@@ -357,6 +358,108 @@ function NeedsYouRow({ item }: { item: DashboardItem }) {
 }
 
 // ---------------------------------------------------------------------------
+// Caught-up surface (M8b-ii / 4.6 / 6.3)
+// ---------------------------------------------------------------------------
+
+interface CaughtUpSurfaceProps {
+  displayedClosed: number;
+  items: DashboardItem[];
+  pausedCount: number;
+  onOpenPowerShell: (repo: string | null) => void;
+  onCopy: (text: string) => void;
+  onOpenExternal: (url: string) => void;
+}
+
+/**
+ * The caught-up state: "Clear. Keep working." + suppressed-when-zero closed
+ * count, then the opt-in pull-forward behind a quiet "Want another?" button.
+ *
+ * Default: headline + count only, nothing to dismiss (4.6/6.3).
+ * The pull-forward card is ONLY visible after activating "Want another?".
+ * The affordance is a quiet link/button, NEVER bg-attention (6.3/1.2).
+ * Candidate set for pull-forward EXCLUDES paused cards (4.6).
+ */
+function CaughtUpSurface({
+  displayedClosed,
+  items,
+  pausedCount,
+  onOpenPowerShell,
+  onCopy,
+  onOpenExternal,
+}: CaughtUpSurfaceProps) {
+  const [pullActive, setPullActive] = useState(false);
+
+  // Single calmest non-paused active card for the opt-in pull-forward (4.6).
+  // Computed once from items; a null candidate hides the affordance entirely.
+  const pullCandidate = useMemo(() => pullForwardCandidate(items), [items]);
+  // A fake primaryRef needed by HeroCard (no auto-focus here).
+  const pullPrimaryRef = useRef<HTMLButtonElement | null>(null);
+
+  return (
+    <div className="flex flex-col gap-2 p-6" data-testid="home-caught-up">
+      {/* Headline: the calm acknowledgment (6.3). */}
+      <p className="text-base text-foreground">{HOME_COPY.caughtUp}</p>
+
+      {/* Closed count: suppressed when zero (1.5 / M8b-i). NEVER "today". */}
+      {displayedClosed > 0 && (
+        <span
+          className="text-sm text-muted-foreground"
+          data-testid="home-closed-count"
+        >
+          {closedRecentLine(displayedClosed)}
+        </span>
+      )}
+
+      {/* "Want another?" opt-in affordance: only shown when there is an
+          eligible non-paused candidate. Quiet link/button, NOT bg-attention
+          so no second saturated accent appears on the all-clear surface (6.3). */}
+      {pullCandidate && !pullActive && (
+        <button
+          type="button"
+          className="text-xs text-muted-foreground underline w-fit text-left hover:text-foreground"
+          data-testid="home-want-another"
+          onClick={() => setPullActive(true)}
+        >
+          Want another?
+        </button>
+      )}
+
+      {/* Pull-forward card: reveals the calmest non-paused active card.
+          Shown only after activation, NOT auto-rendered at the dopamine
+          peak (4.6/6.3). */}
+      {pullCandidate && pullActive && (
+        <div data-testid="home-pull-forward" className="mt-2">
+          <p className="text-xs text-muted-foreground mb-2">Pull one forward?</p>
+          <div data-testid="home-pull-forward-card">
+            <HeroCard
+              hero={pullCandidate}
+              now={new Date()}
+              primaryRef={pullPrimaryRef}
+              onOpenPowerShell={onOpenPowerShell}
+              onCopy={onCopy}
+              onOpenExternal={onOpenExternal}
+              settleClass={null}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Paused disclosure: its own quiet fold, never nested inside
+          pull-forward (4.6/6.3). */}
+      {pausedCount > 0 && (
+        <button
+          type="button"
+          className="text-xs text-muted-foreground text-left w-fit"
+          data-testid="home-paused-control"
+        >
+          {pausedLabel(pausedCount)}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // The session strip (subordinate, 6.4) -- Phase-0 placeholder line only.
 // SessionStrip rows are M9; M8a renders the subordinate region so the layout
 // and the muted-foreground dominance level are testable.
@@ -531,31 +634,20 @@ export default function HomeView({
     }
 
     // 5. Caught up: no card needs you (paused excluded). Default is headline +
-    //    count only, nothing to dismiss; the pull-forward is M8b-ii (opt-in).
-    //    When closedRecent > 0 the count reads as a goal reached (1.10), so it
-    //    renders below the acknowledgment. NEVER shows "0 closed" (1.5).
+    //    count only, nothing to dismiss; the pull-forward is opt-in behind a
+    //    quiet "Want another?" affordance (M8b-ii / 4.6 / 6.3). When
+    //    closedRecent > 0 the count reads as a goal reached (1.10), rendered
+    //    below the acknowledgment. NEVER shows "0 closed" (1.5).
     if (!hero) {
       return (
-        <div className="flex flex-col gap-2 p-6" data-testid="home-caught-up">
-          <p className="text-base text-foreground">{HOME_COPY.caughtUp}</p>
-          {displayedClosed > 0 && (
-            <span
-              className="text-sm text-muted-foreground"
-              data-testid="home-closed-count"
-            >
-              {closedRecentLine(displayedClosed)}
-            </span>
-          )}
-          {pausedCount > 0 && (
-            <button
-              type="button"
-              className="text-xs text-muted-foreground text-left w-fit"
-              data-testid="home-paused-control"
-            >
-              {pausedLabel(pausedCount)}
-            </button>
-          )}
-        </div>
+        <CaughtUpSurface
+          displayedClosed={displayedClosed}
+          items={items}
+          pausedCount={pausedCount}
+          onOpenPowerShell={onOpenPowerShell}
+          onCopy={onCopy}
+          onOpenExternal={onOpenExternal}
+        />
       );
     }
 
