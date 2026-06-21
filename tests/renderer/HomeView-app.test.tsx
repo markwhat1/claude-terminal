@@ -95,7 +95,7 @@ describe('M8a: Home entry pill (App-level)', () => {
     restore = installMock({
       // Start on a real tab so we can click the pill to go Home.
       getActiveTabId: () => Promise.resolve('real-tab-1'),
-      getProgramBoardState: () => Promise.resolve(parseState(loadRaw('time-sensitive.json'))),
+      getProgramBoardState: () => Promise.resolve({ boardState: parseState(loadRaw('time-sensitive.json')), closedRecent: 0, recentCloses: [] }),
     });
 
     await act(async () => {
@@ -136,7 +136,7 @@ describe('M8a: StatusBar suppression on Home', () => {
         { ...makeMockTab('t1'), status: 'working' },
         { ...makeMockTab('t2'), status: 'idle' },
       ]),
-      getProgramBoardState: () => Promise.resolve(parseState(loadRaw('time-sensitive.json'))),
+      getProgramBoardState: () => Promise.resolve({ boardState: parseState(loadRaw('time-sensitive.json')), closedRecent: 0, recentCloses: [] }),
     });
 
     await act(async () => {
@@ -193,6 +193,8 @@ describe('M8a: first-open timeline (fake timers)', () => {
         loadStatus={status}
         resolvedPath="C:\\state.json"
         now={new Date(2026, 5, 21, 1, 1, 0)}
+        closedRecent={0}
+        recentCloses={[]}
         onOpenPowerShell={() => {}}
         onCopy={() => {}}
         onOpenExternal={() => {}}
@@ -273,6 +275,7 @@ describe('M8a: copy voice (6.6)', () => {
       needsYouReasons: [], paused: false, timeSensitive: null,
       dodMet: 0, dodTotal: 0, dodAlmost: false, dodGap: null,
       requiresResponse: false, idleNeedsYou: false, justResolved: false,
+      decidedAndWorked: false,
       horizon: null, avoidanceCategory: null, actions: {}, ...p,
     };
   }

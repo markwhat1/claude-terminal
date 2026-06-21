@@ -42,6 +42,8 @@ function baseProps(overrides: Partial<HomeViewProps> = {}): HomeViewProps {
     loadStatus: 'loading',
     resolvedPath: 'C:\\Users\\Mark\\Claude-Code\\dashboard\\state.json',
     now: NOW,
+    closedRecent: 0,
+    recentCloses: [],
     onOpenPowerShell: vi.fn(),
     onCopy: vi.fn(),
     onOpenExternal: vi.fn(),

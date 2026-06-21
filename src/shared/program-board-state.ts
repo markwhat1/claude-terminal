@@ -84,6 +84,29 @@ export const NOT_RUNNING_STATE: ProgramBoardState = {
   suggested: [],
 };
 
+/**
+ * The broadcast payload sent over the program-board:state channel (M8b-i).
+ *
+ * Wraps ProgramBoardState with the done-lane resolved-set counts so the
+ * renderer can render the "N closed, last 24h" header line and apply settle
+ * classes without a second IPC round-trip. The reader's session-high guard
+ * means closedRecent never decrements mid-session (1.5).
+ */
+export interface ProgramBoardBroadcast {
+  boardState: ProgramBoardState;
+  /**
+   * Displayed count of closes in the rolling last-24h window, frozen to its
+   * session-high by the reader (loss-aversion guard, 1.5).
+   */
+  closedRecent: number;
+  /**
+   * The current rolling resolved-set entries (already pruned past 24h).
+   * Each entry carries the per-close decidedAndWorked flag for the two-tier
+   * settle (1.5). Returned as a copy from the reader.
+   */
+  recentCloses: ClosedRecord[];
+}
+
 // ---------------------------------------------------------------------------
 // Done-lane resolved-set record (M4b, 1.5)
 // ---------------------------------------------------------------------------
@@ -141,6 +164,14 @@ export interface DashboardItem {
   requiresResponse: boolean;
   idleNeedsYou: boolean;
   justResolved: boolean;
+  /**
+   * True when the close that set justResolved was a decided-and-worked close
+   * (a needs-your-decision tag clearing with a fresh commit within ~1 day,
+   * the louder Phase-1 settle tier, 1.5). Always false when justResolved is
+   * false. avoidanceClose (Phase-2 overlay) is RESERVED-NULL and not tracked
+   * here; M13 adds a separate flag when it ships.
+   */
+  decidedAndWorked: boolean;
   horizon: 'now' | 'next' | 'later' | null;
   avoidanceCategory: string | null;
   actions: {
@@ -439,6 +470,7 @@ export function mapCardToItem(card: ProgramCard): DashboardItem {
     requiresResponse: false,
     idleNeedsYou: false,
     justResolved: false,
+    decidedAndWorked: false,
     horizon: null,
     avoidanceCategory: null,
     actions: {},

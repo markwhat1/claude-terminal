@@ -10,7 +10,7 @@ import StartupDialog from './components/StartupDialog';
 import TabBar from './components/TabBar';
 import Terminal from './components/Terminal';
 import HomeView, { type HomeLoadStatus } from './components/HomeView';
-import type { ProgramBoardState } from '../shared/program-board-state';
+import type { ProgramBoardState, ProgramBoardBroadcast, ClosedRecord } from '../shared/program-board-state';
 import { resolvePreferredPowershell } from '../shared/dashboard-ui-helpers';
 import { destroyTerminal } from './components/terminalCache';
 import StatusBar from './components/StatusBar';
@@ -85,6 +85,11 @@ export default function App() {
   // subscription; HomeView is pure and receives this as a prop.
   const [programBoardState, setProgramBoardState] = useState<ProgramBoardState | null>(null);
   const [homeLoadStatus, setHomeLoadStatus] = useState<HomeLoadStatus>('loading');
+  // Done-lane payoff data from the reader (M8b-i, 1.5). The reader's session-
+  // high guard means closedRecent never decrements, but HomeView adds a second
+  // layer for stale-prop safety.
+  const [closedRecent, setClosedRecent] = useState(0);
+  const [recentCloses, setRecentCloses] = useState<ClosedRecord[]>([]);
   // The resolved path is surfaced in the not-running and error states; the
   // reader returns it inside the state, but Phase 0 keeps a stable label.
   const PROGRAM_BOARD_PATH = 'C:\\Users\\Mark\\Claude-Code\\dashboard\\state.json';
@@ -99,9 +104,12 @@ export default function App() {
   // successful read sets 'ready'; a failure with no prior state sets 'error'.
   const loadProgramBoard = useCallback(async () => {
     try {
-      const state = (await window.claudeTerminal.getProgramBoardState()) as ProgramBoardState | null;
-      if (state) {
-        setProgramBoardState(state);
+      // The handler now returns a ProgramBoardBroadcast (state + closed stats).
+      const broadcast = (await window.claudeTerminal.getProgramBoardState()) as ProgramBoardBroadcast | null;
+      if (broadcast && broadcast.boardState) {
+        setProgramBoardState(broadcast.boardState);
+        setClosedRecent(broadcast.closedRecent ?? 0);
+        setRecentCloses(broadcast.recentCloses ?? []);
         setHomeLoadStatus('ready');
       } else {
         // No state and no prior state: hard error. If we already have last-good,
@@ -115,10 +123,14 @@ export default function App() {
 
   useEffect(() => {
     loadProgramBoard();
-    const cleanup = window.claudeTerminal.onProgramBoardState((state) => {
+    const cleanup = window.claudeTerminal.onProgramBoardState((raw) => {
+      // The broadcast now carries a ProgramBoardBroadcast envelope (M8b-i).
       // Last-good preference (4.5): only replace when a real state arrives.
-      if (state) {
-        setProgramBoardState(state as ProgramBoardState);
+      const broadcast = raw as ProgramBoardBroadcast | null;
+      if (broadcast && broadcast.boardState) {
+        setProgramBoardState(broadcast.boardState);
+        setClosedRecent(broadcast.closedRecent ?? 0);
+        setRecentCloses(broadcast.recentCloses ?? []);
         setHomeLoadStatus('ready');
       }
     });
@@ -664,6 +676,8 @@ export default function App() {
               loadStatus={homeLoadStatus}
               resolvedPath={PROGRAM_BOARD_PATH}
               now={new Date()}
+              closedRecent={closedRecent}
+              recentCloses={recentCloses}
               onOpenPowerShell={handleOpenPowerShellInRepo}
               onCopy={handleCopyToClipboard}
               onOpenExternal={handleOpenExternal}

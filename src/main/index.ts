@@ -2,7 +2,10 @@ import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { handleSquirrelEvent } from './squirrel-startup';
-import { PROGRAM_BOARD_STATE_CHANNEL as _PROGRAM_BOARD_STATE_CHANNEL } from '@shared/program-board-state';
+import {
+  PROGRAM_BOARD_STATE_CHANNEL as _PROGRAM_BOARD_STATE_CHANNEL,
+  type ProgramBoardBroadcast,
+} from '@shared/program-board-state';
 import {
   ProgramBoardReader,
   resolveProgramBoardStatePath,
@@ -463,7 +466,14 @@ app.on('ready', async () => {
   const { stateFilePath, root } = resolveProgramBoardStatePath();
   programBoardReader = new ProgramBoardReader(stateFilePath, root, {
     onStateUpdated: (boardState) => {
-      sendToRenderer(PROGRAM_BOARD_STATE_CHANNEL, boardState);
+      // Broadcast the state together with the done-lane counts so the renderer
+      // gets closedRecent and recentCloses in the same event (M8b-i, 1.5).
+      const broadcast: ProgramBoardBroadcast = {
+        boardState,
+        closedRecent: programBoardReader!.getClosedRecent(),
+        recentCloses: programBoardReader!.getRecentCloses(),
+      };
+      sendToRenderer(PROGRAM_BOARD_STATE_CHANNEL, broadcast);
     },
     // The done-lane resolved set persists to userData/dashboard/closed.json,
     // NEVER the workspace git tree (1.5 / 3.6).

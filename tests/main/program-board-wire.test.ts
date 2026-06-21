@@ -205,10 +205,10 @@ describe('program-board:getState with a wired reader', () => {
     const handler = handlers.get('program-board:getState')!;
     const result = await handler({}) as any;
 
-    // The result is NOT the sentinel (generated_at !== null, programs non-empty).
-    expect(result.generated_at).toBe('2026-06-21T10:00:00');
-    expect(result.programs).toHaveLength(1);
-    expect(result.programs[0].slug).toBe('cad-portal');
+    // The result is a ProgramBoardBroadcast — unwrap boardState (M8b-i).
+    expect(result.boardState.generated_at).toBe('2026-06-21T10:00:00');
+    expect(result.boardState.programs).toHaveLength(1);
+    expect(result.boardState.programs[0].slug).toBe('cad-portal');
   });
 
   it('returns the not-running sentinel when no reader is attached', async () => {
@@ -216,9 +216,9 @@ describe('program-board:getState with a wired reader', () => {
     const handler = handlers.get('program-board:getState')!;
     const result = await handler({}) as any;
 
-    // Must equal the sentinel values.
-    expect(result.generated_at).toBeNull();
-    expect(result.programs).toHaveLength(0);
+    // Must equal the sentinel values (broadcast envelope, M8b-i).
+    expect(result.boardState.generated_at).toBeNull();
+    expect(result.boardState.programs).toHaveLength(0);
   });
 });
 

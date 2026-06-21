@@ -803,16 +803,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): { cleanup: () => void
   });
 
   // ---- Program Board (local-only, never forwarded to remote clients) ----
-  // Returns the current parsed ProgramBoardState from the reader, or an empty
-  // not-running state when the reader is not yet available.
+  // Returns the current ProgramBoardBroadcast (state + closed stats) from the
+  // reader, or the not-running sentinel wrapped as a broadcast when the reader
+  // is not yet available (M8b-i: closedRecent and recentCloses included).
   ipcMain.handle('program-board:getState', async () => {
-    // The reader lives in its own module; its instance is attached to state
-    // once M4 wires it in. Until then, return the safe not-running sentinel.
     const reader = (state as any).programBoardReader;
     if (reader && typeof reader.getState === 'function') {
-      return reader.getState();
+      return {
+        boardState: reader.getState(),
+        closedRecent: reader.getClosedRecent(),
+        recentCloses: reader.getRecentCloses(),
+      };
     }
-    return { programs: [], generated_at: null, is_running: false };
+    return { boardState: { programs: [], generated_at: null, suggested: [] }, closedRecent: 0, recentCloses: [] };
   });
 
   // Return cleanup function and wirePtyToTab for external use

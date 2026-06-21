@@ -15,7 +15,7 @@
  * the whole surface (1.2): the hero primary button.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import {
   Card,
@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import type { ProgramBoardState, DashboardItem } from '@shared/program-board-state';
+import type { ProgramBoardState, DashboardItem, ClosedRecord } from '@shared/program-board-state';
 import {
   mapCardToItem,
   defaultNeedsYouList,
@@ -71,6 +71,18 @@ export interface HomeViewProps {
   resolvedPath: string;
   /** Wall-clock now (injectable for deterministic tests). */
   now: Date;
+  /**
+   * The displayed count of closes in the rolling last-24h window, already
+   * frozen to its session-high by the reader (loss-aversion guard, 1.5).
+   * Named closedRecent, never closedToday.
+   */
+  closedRecent: number;
+  /**
+   * The recent resolved-set entries from the reader. Used to annotate items
+   * with settle classes (justResolved + decidedAndWorked, 1.5/M8b-i).
+   * Passed as a snapshot; HomeView does NOT mutate it.
+   */
+  recentCloses: ClosedRecord[];
   /** Open a PowerShell into a repo (the Phase-0 hero primary action). */
   onOpenPowerShell: (repo: string | null) => void;
   /** Copy an inert display string to the clipboard. */
@@ -144,9 +156,16 @@ interface HeroProps {
   onOpenPowerShell: (repo: string | null) => void;
   onCopy: (text: string) => void;
   onOpenExternal: (url: string) => void;
+  /**
+   * The settle class to apply to the hero card root (M8b-i).
+   * One of 'settle-ordinary' | 'settle-decided' | null.
+   * null when the hero has no justResolved record or when reduced-motion is
+   * active (count still ticks in both cases, 1.5).
+   */
+  settleClass: 'settle-ordinary' | 'settle-decided' | null;
 }
 
-function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal }: HeroProps) {
+function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal, settleClass }: HeroProps) {
   const action: KnownActionId = pickPrimaryAction(hero);
   const headline = heroHeadline(hero, action);
   const repo = hero.project; // repos[0], the cwd target.
@@ -169,7 +188,7 @@ function HeroCard({ hero, primaryRef, onOpenPowerShell, onCopy, onOpenExternal }
 
   return (
     <Card
-      className={cn('border-l-4 gap-4 py-6', HERO_MIN_HEIGHT, bandClass)}
+      className={cn('border-l-4 gap-4 py-6', HERO_MIN_HEIGHT, bandClass, settleClass)}
       data-testid="home-hero"
     >
       <CardHeader>
@@ -358,11 +377,29 @@ function SessionStrip() {
 // HomeView root
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// prefers-reduced-motion helper (1.5 / M8b-i)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when the user has opted into reduced motion. Calls matchMedia
+ * at render time so tests can override window.matchMedia and get the right
+ * result without React lifecycle complications.
+ */
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export default function HomeView({
   programBoardState,
   loadStatus,
   resolvedPath,
   now,
+  closedRecent,
+  recentCloses,
   onOpenPowerShell,
   onCopy,
   onOpenExternal,
@@ -375,6 +412,41 @@ export default function HomeView({
   useEffect(() => {
     regionRef.current?.focus();
   }, []);
+
+  // Loss-aversion guard (1.5): the displayed closedRecent is frozen to the
+  // session-high so 24h pruning never decrements it mid-session. The reader
+  // already provides a frozen value, but we add a second layer here so
+  // stale-prop rerenders (e.g. from a parent that re-reads the reader before
+  // the session-high has settled) also cannot cause a visible decrement.
+  const [displayedClosed, setDisplayedClosed] = useState(closedRecent);
+  useEffect(() => {
+    if (closedRecent > displayedClosed) {
+      setDisplayedClosed(closedRecent);
+    }
+  }, [closedRecent, displayedClosed]);
+
+  // Build a lookup of recent-close records by item id so we can annotate
+  // items with settle classes in O(1). The lookup is rebuilt whenever
+  // recentCloses changes.
+  const recentCloseMap = useMemo(() => {
+    const map = new Map<string, ClosedRecord>();
+    for (const rec of recentCloses) {
+      map.set(rec.id, rec);
+    }
+    return map;
+  }, [recentCloses]);
+
+  // Compute the settle class for a given item id (M8b-i, 1.5).
+  // Returns null when prefers-reduced-motion is active (count still ticks).
+  const settleClassForId = useCallback(
+    (id: string): 'settle-ordinary' | 'settle-decided' | null => {
+      const rec = recentCloseMap.get(id);
+      if (!rec) return null;
+      if (prefersReducedMotion()) return null;
+      return rec.decidedAndWorked ? 'settle-decided' : 'settle-ordinary';
+    },
+    [recentCloseMap],
+  );
 
   // Map cards to items once per state change.
   const items: DashboardItem[] = useMemo(() => {
@@ -460,10 +532,20 @@ export default function HomeView({
 
     // 5. Caught up: no card needs you (paused excluded). Default is headline +
     //    count only, nothing to dismiss; the pull-forward is M8b-ii (opt-in).
+    //    When closedRecent > 0 the count reads as a goal reached (1.10), so it
+    //    renders below the acknowledgment. NEVER shows "0 closed" (1.5).
     if (!hero) {
       return (
         <div className="flex flex-col gap-2 p-6" data-testid="home-caught-up">
           <p className="text-base text-foreground">{HOME_COPY.caughtUp}</p>
+          {displayedClosed > 0 && (
+            <span
+              className="text-sm text-muted-foreground"
+              data-testid="home-closed-count"
+            >
+              {closedRecentLine(displayedClosed)}
+            </span>
+          )}
           {pausedCount > 0 && (
             <button
               type="button"
@@ -478,6 +560,7 @@ export default function HomeView({
     }
 
     // 6. The normal board.
+    const heroSettle = settleClassForId(hero.id);
     return (
       <div className="flex flex-col gap-4 p-6 overflow-y-auto" data-testid="home-board">
         {/* needs-you header (6.3 fixed priority: count, closed, degraded) */}
@@ -485,6 +568,15 @@ export default function HomeView({
           <span className="text-sm text-foreground" data-testid="home-need-count">
             {needsYouLine(needCount, workingCount)}
           </span>
+          {/* "N closed, last 24h" (1.5/M8b-i): suppressed when zero. NEVER "today". */}
+          {displayedClosed > 0 && (
+            <span
+              className="text-xs text-muted-foreground"
+              data-testid="home-closed-count"
+            >
+              {closedRecentLine(displayedClosed)}
+            </span>
+          )}
           {minutesAgo !== null && (
             <span
               className="ml-auto text-xs text-muted-foreground truncate"
@@ -502,6 +594,7 @@ export default function HomeView({
           onOpenPowerShell={onOpenPowerShell}
           onCopy={onCopy}
           onOpenExternal={onOpenExternal}
+          settleClass={heroSettle}
         />
 
         <NeedsYouList rows={needsYouRows} pausedCount={pausedCount} now={now} />
