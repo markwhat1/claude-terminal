@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { PermissionMode, Tab, SavedTab, RemoteAccessInfo, RemoteConnection, RemoteTransport, RepoHookConfig, HookExecutionStatus, ProjectConfig, WorkspaceConfig } from './shared/types';
 import type { ShellOption } from './shared/platform';
-import { PROGRAM_BOARD_STATE_CHANNEL } from './shared/program-board-state';
+import { PROGRAM_BOARD_STATE_CHANNEL } from './shared/program-board-channel';
 import {
   CLAUDE_INJECT_QUERY_CHANNEL,
   CLAUDE_INJECT_STATUS_CHANNEL,
